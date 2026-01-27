@@ -6,64 +6,33 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
-	"github.com/joho/godotenv"
+	"github.com/samandr77/bot-test/internal/bot"
+	"github.com/samandr77/bot-test/internal/config"
+	"github.com/samandr77/bot-test/internal/storage"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if err := godotenv.Load(); err != nil {
-		slog.Warn("Error loading .env file, using system env")
-	}
-
-	token := os.Getenv("TELEGRAM_BOT_TOKEN")
-	if token == "" {
-		slog.Error("TELEGRAM_BOT_TOKEN is not set")
-		os.Exit(1)
-	}
-
-	opts := []bot.Option{
-		bot.WithDefaultHandler(onMessage),
-	}
-
-	b, err := bot.New(token, opts...)
+	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("Failed to create bot", "error", err)
+		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, onStart)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/balance", bot.MatchTypeExact, onBalance)
-
-	slog.Info("Bot started")
-
-	b.Start(ctx)
-}
-
-func onMessage(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil {
-		return
+	db, err := storage.NewStorage(cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("Failed to init storage", "error", err)
+		os.Exit(1)
 	}
 
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Я получил сообщение. Используйте /start для начала.",
-	})
-}
+	b, err := bot.New(cfg.TelegramBotToken, db)
+	if err != nil {
+		slog.Error("Failed to init bot", "error", err)
+		os.Exit(1)
+	}
 
-func onStart(ctx context.Context, b *bot.Bot, update *models.Update) {
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Привет! Я ИИ бот. Я могу генерировать текст, видео (Sora 2) и фото (NanoBanana). Используй меню для настройки.",
-	})
-}
-
-func onBalance(ctx context.Context, b *bot.Bot, update *models.Update) {
-	b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Твой баланс:\n- GPT: 0\n- Sora 2: 0\n- NanoBanana: 0",
-	})
+	slog.Info("Starting bot...")
+	b.Start(ctx)
 }

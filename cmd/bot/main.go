@@ -8,7 +8,7 @@ import (
 
 	"github.com/samandr77/bot-test/internal/bot"
 	"github.com/samandr77/bot-test/internal/config"
-	"github.com/samandr77/bot-test/internal/storage"
+	"github.com/samandr77/bot-test/internal/repository"
 )
 
 func main() {
@@ -21,9 +21,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := storage.NewStorage(cfg.DatabaseURL)
+	db, err := repository.New(cfg.DatabaseURL)
 	if err != nil {
-		slog.Error("Failed to init storage", "error", err)
+		slog.Error("Failed to init repository", "error", err)
 		os.Exit(1)
 	}
 

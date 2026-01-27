@@ -27,7 +27,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	b, err := bot.New(cfg.TelegramBotToken, db)
+	b, err := bot.New(cfg.TelegramBotToken, db, cfg.PaymentProviderToken)
 	if err != nil {
 		slog.Error("Failed to init bot", "error", err)
 		os.Exit(1)

@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
@@ -143,9 +144,94 @@ func (b *Bot) handleBalance(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 		return
 	}
 
+	kb := &tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+			{{Text: "Купить", CallbackData: "buy_menu"}},
+		},
+	}
+
 	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   balanceText,
+		ChatID:      chatID,
+		Text:        balanceText,
+		ReplyMarkup: kb,
+	})
+}
+
+func (b *Bot) handleBuyMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	chatID := b.getChatID(update)
+	if chatID == 0 {
+		return
+	}
+
+	text := "Выберите тариф для пополнения:"
+	kb := &tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+			{{Text: "GPT: 5 запросов - 200 руб", CallbackData: "buy_gpt_5"}},
+			{{Text: "Sora 2: 1 генерация - 1000 руб", CallbackData: "buy_sora_1"}},
+			{{Text: "NanoBanana: 5 генераций - 500 руб", CallbackData: "buy_nano_5"}},
+			{{Text: "Назад в меню", CallbackData: "menu"}},
+		},
+	}
+
+	tgBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        text,
+		ReplyMarkup: kb,
+	})
+}
+
+func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, modelType string, amount int, price int) {
+	chatID := b.getChatID(update)
+	if chatID == 0 {
+		return
+	}
+
+	title := fmt.Sprintf("%s доступ", modelType)
+	description := fmt.Sprintf("Доступ к %s %d запросов", modelType, amount)
+	payload := fmt.Sprintf("pay_%s_%d", modelType, amount)
+
+	tgBot.SendInvoice(ctx, &bot.SendInvoiceParams{
+		ChatID:        chatID,
+		Title:         title,
+		Description:   description,
+		Payload:       payload,
+		ProviderToken: b.paymentProviderToken,
+		Currency:      "RUB",
+		Prices: []tgmodels.LabeledPrice{
+			{Label: "Оплата", Amount: price * 100}, // в копейках
+		},
+	})
+}
+
+func (b *Bot) handlePreCheckoutQuery(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	tgBot.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
+		PreCheckoutQueryID: update.PreCheckoutQuery.ID,
+		OK:                 true,
+	})
+}
+
+func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	if update.Message == nil || update.Message.SuccessfulPayment == nil {
+		return
+	}
+
+	payload := update.Message.SuccessfulPayment.InvoicePayload
+	var modelType string
+	var amount int
+	fmt.Sscanf(payload, "pay_%s_%d", &modelType, &amount)
+
+	userID := update.Message.From.ID
+	if err := b.service.AddCredits(ctx, userID, modelType, amount); err != nil {
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "Ошибка при начислении кредитов. Пожалуйста, обратитесь в поддержку.",
+		})
+		return
+	}
+
+	tgBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: update.Message.Chat.ID,
+		Text:   fmt.Sprintf("Оплата прошла успешно! Вам начислено %d запросов для %s.", amount, modelType),
 	})
 }
 
@@ -166,6 +252,14 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 		b.handleNanoBanana(ctx, tgBot, update)
 	case "cmd_balance":
 		b.handleBalance(ctx, tgBot, update)
+	case "buy_menu":
+		b.handleBuyMenu(ctx, tgBot, update)
+	case "buy_gpt_5":
+		b.handleCreateInvoice(ctx, tgBot, update, "gpt", 5, 200)
+	case "buy_sora_1":
+		b.handleCreateInvoice(ctx, tgBot, update, "sora2", 1, 1000)
+	case "buy_nano_5":
+		b.handleCreateInvoice(ctx, tgBot, update, "nanobanano", 5, 500)
 	default:
 		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,

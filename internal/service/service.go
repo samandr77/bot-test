@@ -12,6 +12,7 @@ type Service interface {
 	GetBalance(ctx context.Context, userID int64) (string, error)
 	SaveUser(ctx context.Context, user *models.User) error
 	UpdateUser(ctx context.Context, user *models.User) error
+	AddCredits(ctx context.Context, userID int64, modelType string, amount int) error
 }
 
 type service struct {
@@ -40,4 +41,8 @@ func (s *service) SaveUser(ctx context.Context, user *models.User) error {
 
 func (s *service) UpdateUser(ctx context.Context, user *models.User) error {
 	return s.repo.UpdateUser(ctx, user)
+}
+
+func (s *service) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
+	return s.repo.AddCredits(ctx, userID, modelType, amount)
 }

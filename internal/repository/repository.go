@@ -14,6 +14,8 @@ type Repository interface {
 	GetBalance(ctx context.Context, userID int64) (*models.Balance, error)
 	SaveUser(ctx context.Context, user *models.User) error
 	UpdateUser(ctx context.Context, user *models.User) error
+	AddCredits(ctx context.Context, userID int64, modelType string, amount int) error
+	GetUserByID(ctx context.Context, id int64) (*models.User, error)
 }
 
 type Repo struct {
@@ -21,21 +23,16 @@ type Repo struct {
 }
 
 func New(dsn string) (*Repo, error) {
+	if err := RunMigrations(dsn); err != nil {
+		return nil, err
+	}
+
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("ошибка подключения к базе данных: %w", err)
 	}
 
 	slog.Info("Успешное подключение к базе данных")
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("ошибка получения sql.DB: %w", err)
-	}
-
-	if err := RunMigrations(sqlDB); err != nil {
-		return nil, err
-	}
 
 	return &Repo{DB: db}, nil
 }
@@ -100,4 +97,30 @@ func (r *Repo) UpdateUser(ctx context.Context, user *models.User) error {
 		"first_name": user.FirstName,
 		"last_name":  user.LastName,
 	}).Error
+}
+
+func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
+	column := ""
+	switch modelType {
+	case "gpt":
+		column = "gpt_credits"
+	case "sora2":
+		column = "sora_credits"
+	case "nanobanano":
+		column = "nanobanano_credits"
+	default:
+		return fmt.Errorf("неизвестный тип модели: %s", modelType)
+	}
+
+	return r.DB.WithContext(ctx).Model(&models.Balance{}).
+		Where("user_id = ?", userID).
+		UpdateColumn(column, gorm.Expr(column+" + ?", amount)).Error
+}
+
+func (r *Repo) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
+	var user models.User
+	if err := r.DB.WithContext(ctx).First(&user, id).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
 }

@@ -136,6 +136,16 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 }
 
 func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, "nanobanano")
+	if creditsErr != nil {
+		b.handleError(ctx, chatID, creditsErr, "Failed to check NanoBanana credits")
+		return
+	}
+	if !hasCredits {
+		b.sendNoCreditsMessage(ctx, chatID)
+		return
+	}
+
 	state, err := b.stateService.Get(ctx, userID)
 	if err != nil {
 		b.handleError(ctx, chatID, err, "Failed to get user state for Nano generation")

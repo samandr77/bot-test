@@ -16,6 +16,7 @@ type Repository interface {
 	UpdateUser(ctx context.Context, user *models.User) error
 	AddCredits(ctx context.Context, userID int64, modelType string, amount int) error
 	GetUserByID(ctx context.Context, id int64) (*models.User, error)
+	GetCredits(ctx context.Context, userID int64, modelType string) (int, error)
 }
 
 type Repo struct {
@@ -128,4 +129,22 @@ func (r *Repo) GetUserByID(ctx context.Context, id int64) (*models.User, error) 
 		return nil, fmt.Errorf("failed to get user by id: %w", err)
 	}
 	return &user, nil
+}
+
+func (r *Repo) GetCredits(ctx context.Context, userID int64, modelType string) (int, error) {
+	balance, err := r.GetBalance(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get credits: %w", err)
+	}
+
+	switch modelType {
+	case "gpt":
+		return balance.GptCredits, nil
+	case "sora2":
+		return balance.SoraCredits, nil
+	case "nanobanano":
+		return balance.NanobananaCredits, nil
+	default:
+		return 0, fmt.Errorf("unknown model type: %s", modelType)
+	}
 }

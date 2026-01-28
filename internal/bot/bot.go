@@ -94,6 +94,18 @@ func (b *Bot) answerCallback(ctx context.Context, callbackQueryID string) {
 	}
 }
 
+func (b *Bot) sendNoCreditsMessage(ctx context.Context, chatID int64) {
+	kb := &tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+			{
+				{Text: "Купить", CallbackData: "buy:start"},
+				{Text: "Меню", CallbackData: "menu"},
+			},
+		},
+	}
+	b.sendMessage(ctx, chatID, "У тебя закончились запросы", kb)
+}
+
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil {
 		return

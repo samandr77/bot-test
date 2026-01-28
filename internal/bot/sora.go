@@ -206,6 +206,16 @@ func (b *Bot) handleSoraHD(ctx context.Context, tgBot *bot.Bot, chatID, userID i
 }
 
 func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, "sora2")
+	if creditsErr != nil {
+		b.handleError(ctx, chatID, creditsErr, "Failed to check Sora credits")
+		return
+	}
+	if !hasCredits {
+		b.sendNoCreditsMessage(ctx, chatID)
+		return
+	}
+
 	state, err := b.stateService.Get(ctx, userID)
 	if err != nil {
 		b.handleError(ctx, chatID, err, "Failed to get user state for Sora generation")

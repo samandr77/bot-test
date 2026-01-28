@@ -55,6 +55,16 @@ func (b *Bot) handleGPTMessage(ctx context.Context, tgBot *bot.Bot, update *tgmo
 		return
 	}
 
+	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, "gpt")
+	if creditsErr != nil {
+		b.handleError(ctx, chatID, creditsErr, "Failed to check GPT credits")
+		return
+	}
+	if !hasCredits {
+		b.sendNoCreditsMessage(ctx, chatID)
+		return
+	}
+
 	userText := update.Message.Text
 
 	response := fmt.Sprintf("GPT ответ на: %s\n\n(Это заглушка - реальный GPT будет добавлен позже)", userText)

@@ -13,6 +13,7 @@ type Service interface {
 	SaveUser(ctx context.Context, user *models.User) error
 	UpdateUser(ctx context.Context, user *models.User) error
 	AddCredits(ctx context.Context, userID int64, modelType string, amount int) error
+	HasCredits(ctx context.Context, userID int64, modelType string) (bool, error)
 }
 
 type service struct {
@@ -45,4 +46,12 @@ func (s *service) UpdateUser(ctx context.Context, user *models.User) error {
 
 func (s *service) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
 	return s.repo.AddCredits(ctx, userID, modelType, amount)
+}
+
+func (s *service) HasCredits(ctx context.Context, userID int64, modelType string) (bool, error) {
+	credits, err := s.repo.GetCredits(ctx, userID, modelType)
+	if err != nil {
+		return false, err
+	}
+	return credits > 0, nil
 }

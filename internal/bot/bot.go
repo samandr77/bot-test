@@ -16,15 +16,17 @@ type Bot struct {
 	tgBot                *bot.Bot
 	repo                 *repository.Repo
 	service              service.Service
+	stateService         service.StateService
 	paymentProviderToken string
 }
 
-func New(token string, repo *repository.Repo, paymentToken string) (*Bot, error) {
+func New(token string, repo *repository.Repo, paymentToken string, stateService service.StateService) (*Bot, error) {
 	svc := service.New(repo)
 
 	b := &Bot{
 		repo:                 repo,
 		service:              svc,
+		stateService:         stateService,
 		paymentProviderToken: paymentToken,
 	}
 
@@ -64,14 +66,65 @@ func (b *Bot) Start(ctx context.Context) {
 }
 
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	if update.Message == nil || update.Message.Text == "" {
+	if update.Message == nil {
 		return
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Я получил сообщение. Используйте /menu для управления ботом.",
-	})
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+	state := b.stateService.Get(ctx, userID)
+
+	if len(update.Message.Photo) > 0 {
+		b.handlePhotoMessage(ctx, tgBot, update, state)
+		return
+	}
+
+	if update.Message.Text == "" {
+		return
+	}
+
+	switch state.WaitingFor {
+	case models.WaitingSoraPrompt:
+		b.stateService.SetSoraPrompt(ctx, userID, update.Message.Text)
+		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+		return
+	case models.WaitingNanoPrompt:
+		b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text)
+		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+		return
+	}
+
+	b.handleGPTMessage(ctx, tgBot, update)
+}
+
+func (b *Bot) handlePhotoMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, state *models.UserState) {
+	userID := update.Message.From.ID
+	chatID := update.Message.Chat.ID
+
+	photos := update.Message.Photo
+	fileID := photos[len(photos)-1].FileID
+
+	switch state.WaitingFor {
+	case models.WaitingSoraImage:
+		b.stateService.SetSoraImage(ctx, userID, fileID)
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Изображение сохранено!",
+		})
+		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	case models.WaitingNanoImage:
+		b.stateService.SetNanoImage(ctx, userID, fileID)
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Изображение сохранено! Теперь напишите, что изменить.",
+		})
+		b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt)
+	default:
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Используйте /menu для выбора модели.",
+		})
+	}
 }
 
 func (b *Bot) onStart(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {

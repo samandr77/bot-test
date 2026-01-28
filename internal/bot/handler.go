@@ -86,40 +86,6 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	}
 }
 
-func (b *Bot) handleGPTCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	data := update.CallbackQuery.Data
-	switch data {
-	case "gpt:start":
-		b.handleGPT(ctx, tgBot, update)
-	}
-}
-
-func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	data := update.CallbackQuery.Data
-	switch data {
-	case "sora:start":
-		b.handleSora2(ctx, tgBot, update)
-	default:
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-			CallbackQueryID: update.CallbackQuery.ID,
-			Text:            "Настройки Sora пока не реализованы",
-		})
-	}
-}
-
-func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	data := update.CallbackQuery.Data
-	switch data {
-	case "nano:start":
-		b.handleNanoBanana(ctx, tgBot, update)
-	default:
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-			CallbackQueryID: update.CallbackQuery.ID,
-			Text:            "Настройки NanoBanana пока не реализованы",
-		})
-	}
-}
-
 func (b *Bot) handleBalanceCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	data := update.CallbackQuery.Data
 	switch data {

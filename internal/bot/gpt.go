@@ -33,19 +33,13 @@ func (b *Bot) handleGPT(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) handleGPTCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	data := update.CallbackQuery.Data
 
-	tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: update.CallbackQuery.ID,
-	})
+	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch data {
 	case "gpt:start":
@@ -71,11 +65,7 @@ func (b *Bot) handleGPTMessage(ctx context.Context, tgBot *bot.Bot, update *tgmo
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        response,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, response, kb)
 
 	if err := b.stateService.SetMode(ctx, userID, models.ModeGPT); err != nil {
 		traceID := logger.GetTraceID(ctx)

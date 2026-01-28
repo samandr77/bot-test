@@ -1,0 +1,53 @@
+version: "2"
+
+linters:
+  disable-all: true
+  enable:
+    - staticcheck   # Статический анализ
+    - errcheck      # Проверка необработанных ошибок
+    - govet         # Подозрительные конструкции
+    - ineffassign   # Неэффективные присваивания
+    - unused        # Неиспользуемый код
+    - gocyclo       # Цикломатическая сложность
+    - misspell      # Опечатки
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    
+    gocyclo:
+      min-complexity: 15
+    
+    govet:
+      enable:
+        - shadow      # Затенение переменных
+        - nilness     # Проверка на nil
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+    - testdata
+
+output:
+  format: text
+  print-issued-lines: true
+  print-linter-name: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  exclude-rules:
+    - path: '_test\.go'
+      linters:
+        - gocyclo
+        - errcheck
+
+severity:
+  default: error
+  rules:
+    - linters:
+        - errcheck
+      severity: warning

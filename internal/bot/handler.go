@@ -44,9 +44,7 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 	}
 
 	if update.CallbackQuery != nil {
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-			CallbackQueryID: update.CallbackQuery.ID,
-		})
+		b.answerCallback(ctx, update.CallbackQuery.ID)
 	}
 
 	text := "Выберите нужную модель или команду:"
@@ -58,11 +56,7 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -88,10 +82,12 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	case strings.HasPrefix(data, "buy:"):
 		b.handleBuyCallback(ctx, tgBot, update)
 	default:
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		if _, err := tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            "Эта функция будет доступна позже",
-		})
+		}); err != nil {
+			slog.Error("Failed to answer callback query with text", "error", err, "callback_id", update.CallbackQuery.ID)
+		}
 	}
 }
 

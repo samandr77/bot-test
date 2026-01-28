@@ -57,12 +57,12 @@ func (r *Repo) SaveUser(ctx context.Context, user *models.User) error {
 		err := tx.Where("id = ?", user.ID).First(&existingUser).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				if err := tx.Create(user).Error; err != nil {
-					return fmt.Errorf("ошибка создания пользователя: %w", err)
+				if errCreate := tx.Create(user).Error; errCreate != nil {
+					return fmt.Errorf("ошибка создания пользователя: %w", errCreate)
 				}
 				balance := &models.Balance{UserID: user.ID}
-				if err := tx.Create(balance).Error; err != nil {
-					return fmt.Errorf("ошибка создания баланса: %w", err)
+				if errBalance := tx.Create(balance).Error; errBalance != nil {
+					return fmt.Errorf("ошибка создания баланса: %w", errBalance)
 				}
 				return nil
 			}

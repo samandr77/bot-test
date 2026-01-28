@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
@@ -97,11 +99,7 @@ func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
@@ -121,11 +119,7 @@ func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) showSoraImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
@@ -142,11 +136,7 @@ func (b *Bot) showSoraImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, u
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -154,62 +144,65 @@ func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	chatID := b.getChatID(update)
 	userID := b.getUserID(update)
 
-	tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: update.CallbackQuery.ID,
-	})
+	b.answerCallback(ctx, update.CallbackQuery.ID)
 
-	switch data {
-	case "sora:start":
+	switch {
+	case data == "sora:start":
 		b.handleSora2(ctx, tgBot, update)
-	case "sora:prompt":
+	case data == "sora:prompt":
 		b.showSoraPromptScreen(ctx, tgBot, chatID, userID)
-	case "sora:image":
+	case data == "sora:image":
 		b.showSoraImageScreen(ctx, tgBot, chatID, userID)
-	case "sora:back":
-		if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to clear waiting for Sora")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:dur_10":
-		if err := b.stateService.SetSoraDuration(ctx, userID, 10); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora duration")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:dur_15":
-		if err := b.stateService.SetSoraDuration(ctx, userID, 15); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora duration")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:dur_25":
-		if err := b.stateService.SetSoraDuration(ctx, userID, 25); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora duration")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:fmt_16_9":
-		if err := b.stateService.SetSoraFormat(ctx, userID, "16:9"); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora format")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:fmt_9_16":
-		if err := b.stateService.SetSoraFormat(ctx, userID, "9:16"); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora format")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:hd":
-		if _, err := b.stateService.ToggleSoraHD(ctx, userID); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to toggle Sora HD")
-			return
-		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
-	case "sora:generate":
+	case data == "sora:back":
+		b.handleSoraBack(ctx, tgBot, chatID, userID)
+	case strings.HasPrefix(data, "sora:dur_"):
+		b.handleSoraDuration(ctx, tgBot, chatID, userID, data)
+	case strings.HasPrefix(data, "sora:fmt_"):
+		b.handleSoraFormat(ctx, tgBot, chatID, userID, data)
+	case data == "sora:hd":
+		b.handleSoraHD(ctx, tgBot, chatID, userID)
+	case data == "sora:generate":
 		b.handleSoraGenerate(ctx, tgBot, chatID, userID)
 	}
+}
+
+func (b *Bot) handleSoraBack(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
+		b.handleError(ctx, chatID, err, "Failed to clear waiting for Sora")
+		return
+	}
+	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+}
+
+func (b *Bot) handleSoraDuration(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
+	durStr := strings.TrimPrefix(data, "sora:dur_")
+	dur, err := strconv.Atoi(durStr)
+	if err != nil {
+		b.handleError(ctx, chatID, err, "Invalid duration format")
+		return
+	}
+	if err := b.stateService.SetSoraDuration(ctx, userID, dur); err != nil {
+		b.handleError(ctx, chatID, err, "Failed to set Sora duration")
+		return
+	}
+	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+}
+
+func (b *Bot) handleSoraFormat(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
+	format := strings.ReplaceAll(strings.TrimPrefix(data, "sora:fmt_"), "_", ":")
+	if err := b.stateService.SetSoraFormat(ctx, userID, format); err != nil {
+		b.handleError(ctx, chatID, err, "Failed to set Sora format")
+		return
+	}
+	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+}
+
+func (b *Bot) handleSoraHD(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+	if _, err := b.stateService.ToggleSoraHD(ctx, userID); err != nil {
+		b.handleError(ctx, chatID, err, "Failed to toggle Sora HD")
+		return
+	}
+	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 }
 
 func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
@@ -220,10 +213,7 @@ func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 	}
 
 	if state.Sora.Prompt == "" {
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Сначала укажите промпт для генерации",
-		})
+		b.sendMessage(ctx, chatID, "Сначала укажите промпт для генерации", nil)
 		return
 	}
 
@@ -248,11 +238,7 @@ HD: %v
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 
 	if err := b.stateService.ResetSora(ctx, userID); err != nil {
 		slog.Error("Failed to reset Sora state", "error", err, "user_id", userID)

@@ -31,11 +31,13 @@ func (b *Bot) handleBalance(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
+	if _, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        balanceText,
 		ReplyMarkup: kb,
-	})
+	}); err != nil {
+		slog.Error("Failed to send balance message", "error", err, "chat_id", chatID)
+	}
 }
 
 func (b *Bot) handleBuyMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -54,11 +56,13 @@ func (b *Bot) handleBuyMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
+	if _, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
 		ReplyMarkup: kb,
-	})
+	}); err != nil {
+		slog.Error("Failed to send buy menu message", "error", err, "chat_id", chatID)
+	}
 }
 
 func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, modelType string, amount int, price int) {
@@ -79,7 +83,7 @@ func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *t
 		ProviderToken: b.paymentProviderToken,
 		Currency:      "RUB",
 		Prices: []tgmodels.LabeledPrice{
-			{Label: "Оплата", Amount: price * 100}, // в копейках
+			{Label: "Оплата", Amount: price * 100},
 		},
 	})
 	if err != nil {
@@ -88,10 +92,12 @@ func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *t
 }
 
 func (b *Bot) handlePreCheckoutQuery(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	tgBot.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
+	if _, err := tgBot.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
 		PreCheckoutQueryID: update.PreCheckoutQuery.ID,
 		OK:                 true,
-	})
+	}); err != nil {
+		slog.Error("Failed to answer pre-checkout query", "error", err, "query_id", update.PreCheckoutQuery.ID)
+	}
 }
 
 func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -109,7 +115,11 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 	}
 
 	modelType := parts[1]
-	amount, _ := strconv.Atoi(parts[2])
+	amount, err := strconv.Atoi(parts[2])
+	if err != nil {
+		slog.Error("Invalid amount in payment payload", "error", err, "payload", payload)
+		return
+	}
 
 	userID := update.Message.From.ID
 
@@ -120,12 +130,16 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 		"telegramPaymentID", payment.TelegramPaymentChargeID,
 	)
 
-	if err := b.service.AddCredits(ctx, userID, modelType, amount); err != nil {
-		b.handleError(ctx, update.Message.Chat.ID, err, "Failed to add credits after payment")
+	if addErr := b.service.AddCredits(ctx, userID, modelType, amount); addErr != nil {
+		b.handleError(ctx, update.Message.Chat.ID, addErr, "Failed to add credits after payment")
 		return
 	}
 
-	balanceText, _ := b.service.GetBalance(ctx, userID)
+	balanceText, err := b.service.GetBalance(ctx, userID)
+	if err != nil {
+		slog.Warn("Failed to get balance for success message", "error", err, "user_id", userID)
+		balanceText = "Ваш баланс обновлен."
+	}
 
 	var modelButton tgmodels.InlineKeyboardButton
 	switch modelType {
@@ -145,9 +159,11 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
+	if _, err := tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
 		Text:        fmt.Sprintf("Оплата прошла успешно!\n\nВам начислено: %d запр. (%s)\n\n%s", amount, modelType, balanceText),
 		ReplyMarkup: kb,
-	})
+	}); err != nil {
+		slog.Error("Failed to send success payment message", "error", err, "user_id", userID)
+	}
 }

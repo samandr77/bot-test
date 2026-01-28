@@ -73,10 +73,25 @@ func (b *Bot) handleError(ctx context.Context, chatID int64, err error, message 
 	if chatID == 0 {
 		return
 	}
-	_, _ = b.tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Извините, произошла техническая ошибка. Мы уже работаем над её исправлением.",
-	})
+	b.sendMessage(ctx, chatID, "Извините, произошла техническая ошибка. Мы уже работаем над её исправлением.", nil)
+}
+
+func (b *Bot) sendMessage(ctx context.Context, chatID int64, text string, kb *tgmodels.InlineKeyboardMarkup) {
+	if _, err := b.tgBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:      chatID,
+		Text:        text,
+		ReplyMarkup: kb,
+	}); err != nil {
+		slog.Error("Failed to send message", "error", err, "chat_id", chatID)
+	}
+}
+
+func (b *Bot) answerCallback(ctx context.Context, callbackQueryID string) {
+	if _, err := b.tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: callbackQueryID,
+	}); err != nil {
+		slog.Error("Failed to answer callback query", "error", err, "callback_id", callbackQueryID)
+	}
 }
 
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -122,24 +137,16 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
 		return
 	case models.WaitingSoraImage:
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание к видео, используйте раздел «Промпт».",
-			ReplyMarkup: &tgmodels.InlineKeyboardMarkup{
-				InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-					{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
-				},
+		b.sendMessage(ctx, chatID, "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание к видео, используйте раздел «Промпт».", &tgmodels.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+				{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
 			},
 		})
 		return
 	case models.WaitingNanoImage:
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание, используйте раздел «Промпт».",
-			ReplyMarkup: &tgmodels.InlineKeyboardMarkup{
-				InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-					{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
-				},
+		b.sendMessage(ctx, chatID, "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание, используйте раздел «Промпт».", &tgmodels.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+				{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
 			},
 		})
 		return
@@ -167,10 +174,7 @@ func (b *Bot) handleDocumentMessage(ctx context.Context, tgBot *bot.Bot, update 
 	}
 
 	if !isImage {
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "Пожалуйста, отправьте изображение (в формате JPG, PNG, WEBP).",
-		})
+		b.sendMessage(ctx, update.Message.Chat.ID, "Пожалуйста, отправьте изображение (в формате JPG, PNG, WEBP).", nil)
 		return
 	}
 
@@ -187,28 +191,19 @@ func (b *Bot) saveImageFromMessage(ctx context.Context, tgBot *bot.Bot, update *
 			b.handleError(ctx, chatID, err, "Failed to set Sora image")
 			return
 		}
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Изображение сохранено!",
-		})
+		b.sendMessage(ctx, chatID, "Изображение сохранено!", nil)
 		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 	case models.WaitingNanoImage:
 		if err := b.stateService.SetNanoImage(ctx, userID, fileID); err != nil {
 			b.handleError(ctx, chatID, err, "Failed to set Nano image")
 			return
 		}
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Изображение сохранено! Теперь напишите, что изменить.",
-		})
+		b.sendMessage(ctx, chatID, "Изображение сохранено! Теперь напишите, что изменить.", nil)
 		if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); err != nil {
 			b.handleError(ctx, chatID, err, "Failed to set waiting for Nano prompt")
 		}
 	default:
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Используйте /menu для выбора модели.",
-		})
+		b.sendMessage(ctx, chatID, "Используйте /menu для выбора модели.", nil)
 	}
 }
 
@@ -228,10 +223,7 @@ func (b *Bot) onStart(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Upda
 		slog.Error("Failed to save user", "error", err)
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   "Привет! Я ИИ бот. Я могу генерировать текст, видео (Sora 2) и фото (NanoBanana).",
-	})
+	b.sendMessage(ctx, update.Message.Chat.ID, "Привет! Я ИИ бот. Я могу генерировать текст, видео (Sora 2) и фото (NanoBanana).", nil)
 
 	b.handleMenu(ctx, tgBot, update)
 }

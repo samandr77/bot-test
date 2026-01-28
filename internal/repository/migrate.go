@@ -18,7 +18,11 @@ func RunMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("ошибка открытия соединения для миграций: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("Failed to close database during migration", "error", err)
+		}
+	}()
 
 	goose.SetBaseFS(embedMigrations)
 

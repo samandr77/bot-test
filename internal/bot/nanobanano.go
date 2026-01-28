@@ -66,11 +66,7 @@ func (b *Bot) showNanoMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 	slog.Info("showNanoMainScreen sending text", "text", text, "promptText", promptText, "imageText", imageText)
 
-	_, err = tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 	slog.Info("showNanoMainScreen SendMessage result", "err", err)
 }
 
@@ -90,11 +86,7 @@ func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) showNanoImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
@@ -113,11 +105,7 @@ func (b *Bot) showNanoImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, u
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -127,9 +115,7 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 
 	slog.Info("Nano callback received", "data", data, "chatID", chatID, "userID", userID)
 
-	tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: update.CallbackQuery.ID,
-	})
+	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch data {
 	case "nano:start":
@@ -157,10 +143,7 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 	}
 
 	if state.Nano.Prompt == "" && state.Nano.ImageURL == "" {
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Сначала укажите промпт или загрузите изображение.",
-		})
+		b.sendMessage(ctx, chatID, "Сначала укажите промпт или загрузите изображение.", nil)
 		return
 	}
 
@@ -189,11 +172,7 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 
 	if err := b.stateService.ResetNano(ctx, userID); err != nil {
 		slog.Error("Failed to reset Nano state", "error", err, "user_id", userID)

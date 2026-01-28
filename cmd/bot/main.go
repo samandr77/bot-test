@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/joho/godotenv"
 	"github.com/samandr77/bot-test/internal/bot"
 	"github.com/samandr77/bot-test/internal/config"
 	"github.com/samandr77/bot-test/internal/pkg/logger"
@@ -17,9 +18,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	cfg, err := config.Load()
-	if err != nil {
-		slog.Error("Failed to load config", "error", err)
+	loadEnvErr := godotenv.Load()
+	if loadEnvErr != nil {
+		slog.Info("No .env file found or failed to load .env file", "error", loadEnvErr)
+	}
+
+	cfg, cfgErr := config.Load()
+	if cfgErr != nil {
+		slog.Error("Failed to load config", "error", cfgErr)
 		os.Exit(1)
 	}
 
@@ -36,7 +42,11 @@ func main() {
 		slog.Error("Failed to init state repository (Redis)", "error", err)
 		os.Exit(1)
 	}
-	defer stateRepo.Close()
+	defer func() {
+		if closeErr := stateRepo.Close(); closeErr != nil {
+			slog.Error("Failed to close state repository", "error", closeErr)
+		}
+	}()
 
 	stateService := service.NewStateService(stateRepo)
 

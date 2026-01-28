@@ -8,7 +8,9 @@ import (
 
 	"github.com/samandr77/bot-test/internal/bot"
 	"github.com/samandr77/bot-test/internal/config"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 	"github.com/samandr77/bot-test/internal/repository"
+	"github.com/samandr77/bot-test/internal/service"
 )
 
 func main() {
@@ -21,13 +23,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	logger.Init(cfg.LogLevel)
+
 	db, err := repository.New(cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("Failed to init repository", "error", err)
 		os.Exit(1)
 	}
 
-	b, err := bot.New(cfg.TelegramBotToken, db)
+	stateRepo, err := repository.NewRedisStateRepository(cfg.RedisURL)
+	if err != nil {
+		slog.Error("Failed to init state repository (Redis)", "error", err)
+		os.Exit(1)
+	}
+	defer stateRepo.Close()
+
+	stateService := service.NewStateService(stateRepo)
+
+	b, err := bot.New(cfg.TelegramBotToken, db, cfg.PaymentProviderToken, stateService)
 	if err != nil {
 		slog.Error("Failed to init bot", "error", err)
 		os.Exit(1)

@@ -2,9 +2,12 @@ package bot
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 )
 
 func (b *Bot) getChatID(update *tgmodels.Update) int64 {
@@ -29,8 +32,15 @@ func (b *Bot) getUserID(update *tgmodels.Update) int64 {
 
 func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	chatID := b.getChatID(update)
-	if chatID == 0 {
+	userID := b.getUserID(update)
+	if chatID == 0 || userID == 0 {
 		return
+	}
+
+	traceID := logger.GetTraceID(ctx)
+
+	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
+		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", err, "user_id", userID)
 	}
 
 	if update.CallbackQuery != nil {
@@ -42,9 +52,9 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 	text := "Выберите нужную модель или команду:"
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "gpt", CallbackData: "cmd_gpt"}, {Text: "sora2", CallbackData: "cmd_sora2"}},
-			{{Text: "nanobanano", CallbackData: "cmd_nanobanano"}},
-			{{Text: "balance", CallbackData: "cmd_balance"}},
+			{{Text: "gpt", CallbackData: "gpt:start"}, {Text: "sora2", CallbackData: "sora:start"}},
+			{{Text: "nanobanano", CallbackData: "nano:start"}},
+			{{Text: "balance", CallbackData: "balance:start"}},
 		},
 	}
 
@@ -52,100 +62,6 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 		ChatID:      chatID,
 		Text:        text,
 		ReplyMarkup: kb,
-	})
-}
-
-func (b *Bot) handleGPT(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	chatID := b.getChatID(update)
-	if chatID == 0 {
-		return
-	}
-
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   "Отправьте ваш запрос.",
-	})
-}
-
-func (b *Bot) handleSora2(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	chatID := b.getChatID(update)
-	if chatID == 0 {
-		return
-	}
-
-	text := `Привет, Sora 2
-В этом разделе нужно задать настройки для видео, которое будет сгенерировано с помощью Sora Video 2:
-
-1. Опишите видео в разделе «Промпт»
-2. Можете добавить изображение: оно станет основой для видео
-3. Выберите длительность (10, 15 или 25 сек.) и соотношение сторон (16:9 или 9:16)
-4. Опция «HD» увеличивает время генерации, но даёт лучшее качество
-
-Текущий промпт: не указан
-Изображение: не добавлено`
-
-	kb := &tgmodels.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Промпт", CallbackData: "sora_prompt"}, {Text: "Изображение", CallbackData: "sora_image"}},
-			{{Text: "Длительность", CallbackData: "sora_duration"}, {Text: "Формат", CallbackData: "sora_format"}},
-			{{Text: "HD", CallbackData: "sora_hd"}},
-			{{Text: "Сгенерировать", CallbackData: "sora_generate"}},
-			{{Text: "Меню", CallbackData: "menu"}},
-		},
-	}
-
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
-}
-
-func (b *Bot) handleNanoBanana(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	chatID := b.getChatID(update)
-	if chatID == 0 {
-		return
-	}
-
-	text := `Привет, Nano Banano
-Рекомендация по использованию:
-Отправьте изображения, если хотите изменить ИЛИ напишите промт, что сгенерировать`
-
-	kb := &tgmodels.InlineKeyboardMarkup{
-		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Промпт", CallbackData: "nano_prompt"}, {Text: "Изображения", CallbackData: "nano_images"}},
-			{{Text: "Сгенерировать", CallbackData: "nano_generate"}},
-			{{Text: "Меню", CallbackData: "menu"}},
-		},
-	}
-
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
-}
-
-func (b *Bot) handleBalance(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	chatID := b.getChatID(update)
-	userID := b.getUserID(update)
-
-	if chatID == 0 || userID == 0 {
-		return
-	}
-
-	balanceText, err := b.service.GetBalance(ctx, userID)
-	if err != nil {
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Ошибка при получении баланса.",
-		})
-		return
-	}
-
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   balanceText,
 	})
 }
 
@@ -155,21 +71,48 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	}
 
 	data := update.CallbackQuery.Data
-	switch data {
-	case "menu":
+	traceID := logger.GetTraceID(ctx)
+	slog.Info("Callback received", "handler", "handleCallback", "data", data, "traceID", traceID)
+
+	switch {
+	case data == "menu":
 		b.handleMenu(ctx, tgBot, update)
-	case "cmd_gpt":
-		b.handleGPT(ctx, tgBot, update)
-	case "cmd_sora2":
-		b.handleSora2(ctx, tgBot, update)
-	case "cmd_nanobanano":
-		b.handleNanoBanana(ctx, tgBot, update)
-	case "cmd_balance":
-		b.handleBalance(ctx, tgBot, update)
+	case strings.HasPrefix(data, "gpt:"):
+		b.handleGPTCallback(ctx, tgBot, update)
+	case strings.HasPrefix(data, "sora:"):
+		b.handleSoraCallback(ctx, tgBot, update)
+	case strings.HasPrefix(data, "nano:"):
+		b.handleNanoCallback(ctx, tgBot, update)
+	case strings.HasPrefix(data, "balance:"):
+		b.handleBalanceCallback(ctx, tgBot, update)
+	case strings.HasPrefix(data, "buy:"):
+		b.handleBuyCallback(ctx, tgBot, update)
 	default:
 		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            "Эта функция будет доступна позже",
 		})
+	}
+}
+
+func (b *Bot) handleBalanceCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	data := update.CallbackQuery.Data
+	switch data {
+	case "balance:start":
+		b.handleBalance(ctx, tgBot, update)
+	}
+}
+
+func (b *Bot) handleBuyCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	data := update.CallbackQuery.Data
+	switch data {
+	case "buy:start":
+		b.handleBuyMenu(ctx, tgBot, update)
+	case "buy:gpt_5":
+		b.handleCreateInvoice(ctx, tgBot, update, "gpt", 5, 200)
+	case "buy:sora_1":
+		b.handleCreateInvoice(ctx, tgBot, update, "sora2", 1, 1000)
+	case "buy:nano_5":
+		b.handleCreateInvoice(ctx, tgBot, update, "nanobanano", 5, 500)
 	}
 }

@@ -48,6 +48,14 @@ func New(token string, repo *repository.Repo, paymentToken string) (*Bot, error)
 
 	b.tgBot.RegisterHandler(bot.HandlerTypeCallbackQueryData, "", bot.MatchTypePrefix, b.handleCallback)
 
+	b.tgBot.RegisterHandlerMatchFunc(func(u *tgmodels.Update) bool {
+		return u.PreCheckoutQuery != nil
+	}, b.handlePreCheckoutQuery)
+
+	b.tgBot.RegisterHandlerMatchFunc(func(u *tgmodels.Update) bool {
+		return u.Message != nil && u.Message.SuccessfulPayment != nil
+	}, b.handleSuccessfulPayment)
+
 	return b, nil
 }
 
@@ -56,17 +64,7 @@ func (b *Bot) Start(ctx context.Context) {
 }
 
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
-	if update.PreCheckoutQuery != nil {
-		b.handlePreCheckoutQuery(ctx, tgBot, update)
-		return
-	}
-
-	if update.Message != nil && update.Message.SuccessfulPayment != nil {
-		b.handleSuccessfulPayment(ctx, tgBot, update)
-		return
-	}
-
-	if update.Message == nil {
+	if update.Message == nil || update.Message.Text == "" {
 		return
 	}
 

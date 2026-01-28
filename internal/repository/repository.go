@@ -27,7 +27,9 @@ func New(dsn string) (*Repo, error) {
 		return nil, err
 	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		PrepareStmt: false,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("ошибка подключения к базе данных: %w", err)
 	}

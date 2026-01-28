@@ -8,6 +8,7 @@ import (
 
 	"github.com/samandr77/bot-test/internal/bot"
 	"github.com/samandr77/bot-test/internal/config"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 	"github.com/samandr77/bot-test/internal/repository"
 	"github.com/samandr77/bot-test/internal/service"
 )
@@ -21,6 +22,8 @@ func main() {
 		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	logger.Init(cfg.LogLevel)
 
 	db, err := repository.New(cfg.DatabaseURL)
 	if err != nil {

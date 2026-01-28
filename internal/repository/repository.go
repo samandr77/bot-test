@@ -46,7 +46,7 @@ func (r *Repo) GetBalance(ctx context.Context, userID int64) (*models.Balance, e
 		if err == gorm.ErrRecordNotFound {
 			return &models.Balance{UserID: userID}, nil
 		}
-		return nil, fmt.Errorf("ошибка получения баланса: %w", err)
+		return nil, fmt.Errorf("failed to get balance: %w", err)
 	}
 	return &balance, nil
 }
@@ -122,7 +122,10 @@ func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, a
 func (r *Repo) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	var user models.User
 	if err := r.DB.WithContext(ctx).First(&user, id).Error; err != nil {
-		return nil, err
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get user by id: %w", err)
 	}
 	return &user, nil
 }

@@ -21,10 +21,7 @@ func (b *Bot) handleBalance(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 
 	balanceText, err := b.service.GetBalance(ctx, userID)
 	if err != nil {
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   "Ошибка при получении баланса.",
-		})
+		b.handleError(ctx, chatID, err, "Failed to get balance")
 		return
 	}
 
@@ -86,7 +83,7 @@ func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *t
 		},
 	})
 	if err != nil {
-		slog.Error("Failed to send invoice", "error", err, "userID", b.getUserID(update))
+		slog.Error("Failed to send invoice", "error", err, "user_id", b.getUserID(update))
 	}
 }
 
@@ -124,11 +121,7 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 	)
 
 	if err := b.service.AddCredits(ctx, userID, modelType, amount); err != nil {
-		slog.Error("Failed to add credits", "error", err, "userID", userID)
-		tgBot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: update.Message.Chat.ID,
-			Text:   "Ошибка при начислении кредитов. Пожалуйста, обратитесь в поддержку.",
-		})
+		b.handleError(ctx, update.Message.Chat.ID, err, "Failed to add credits after payment")
 		return
 	}
 
@@ -154,7 +147,7 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 
 	tgBot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      update.Message.Chat.ID,
-		Text:        fmt.Sprintf("✅ Оплата прошла успешно!\n\nВам начислено: %d запр. (%s)\n\n%s", amount, modelType, balanceText),
+		Text:        fmt.Sprintf("Оплата прошла успешно!\n\nВам начислено: %d запр. (%s)\n\n%s", amount, modelType, balanceText),
 		ReplyMarkup: kb,
 	})
 }

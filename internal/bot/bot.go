@@ -8,6 +8,7 @@ import (
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
 	"github.com/samandr77/bot-test/internal/models"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 	"github.com/samandr77/bot-test/internal/repository"
 	"github.com/samandr77/bot-test/internal/service"
 )
@@ -32,6 +33,7 @@ func New(token string, repo *repository.Repo, paymentToken string, stateService 
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(b.onMessage),
+		bot.WithMiddlewares(b.LoggingMiddleware),
 	}
 
 	tgBot, err := bot.New(token, opts...)
@@ -65,6 +67,18 @@ func (b *Bot) Start(ctx context.Context) {
 	b.tgBot.Start(ctx)
 }
 
+func (b *Bot) handleError(ctx context.Context, chatID int64, err error, message string) {
+	traceID := logger.GetTraceID(ctx)
+	slog.Error(message, "error", err, "chat_id", chatID, "traceID", traceID)
+	if chatID == 0 {
+		return
+	}
+	_, _ = b.tgBot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: chatID,
+		Text:   "Извините, произошла техническая ошибка. Мы уже работаем над её исправлением.",
+	})
+}
+
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil {
 		return
@@ -72,10 +86,19 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
-	state := b.stateService.Get(ctx, userID)
+	state, err := b.stateService.Get(ctx, userID)
+	if err != nil {
+		b.handleError(ctx, chatID, err, "Failed to get user state")
+		return
+	}
 
 	if len(update.Message.Photo) > 0 {
 		b.handlePhotoMessage(ctx, tgBot, update, state)
+		return
+	}
+
+	if update.Message.Document != nil {
+		b.handleDocumentMessage(ctx, tgBot, update, state)
 		return
 	}
 
@@ -85,12 +108,40 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 
 	switch state.WaitingFor {
 	case models.WaitingSoraPrompt:
-		b.stateService.SetSoraPrompt(ctx, userID, update.Message.Text)
+		if err := b.stateService.SetSoraPrompt(ctx, userID, update.Message.Text); err != nil {
+			b.handleError(ctx, chatID, err, "Failed to set Sora prompt")
+			return
+		}
 		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 		return
 	case models.WaitingNanoPrompt:
-		b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text)
+		if err := b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text); err != nil {
+			b.handleError(ctx, chatID, err, "Failed to set Nano prompt")
+			return
+		}
 		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+		return
+	case models.WaitingSoraImage:
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание к видео, используйте раздел «Промпт».",
+			ReplyMarkup: &tgmodels.InlineKeyboardMarkup{
+				InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+					{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
+				},
+			},
+		})
+		return
+	case models.WaitingNanoImage:
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание, используйте раздел «Промпт».",
+			ReplyMarkup: &tgmodels.InlineKeyboardMarkup{
+				InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+					{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
+				},
+			},
+		})
 		return
 	}
 
@@ -98,27 +149,61 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 }
 
 func (b *Bot) handlePhotoMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, state *models.UserState) {
+	photos := update.Message.Photo
+	fileID := photos[len(photos)-1].FileID
+	b.saveImageFromMessage(ctx, tgBot, update, state, fileID)
+}
+
+func (b *Bot) handleDocumentMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, state *models.UserState) {
+	doc := update.Message.Document
+	if doc == nil {
+		return
+	}
+
+	isImage := false
+	switch doc.MimeType {
+	case "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif":
+		isImage = true
+	}
+
+	if !isImage {
+		tgBot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   "Пожалуйста, отправьте изображение (в формате JPG, PNG, WEBP).",
+		})
+		return
+	}
+
+	b.saveImageFromMessage(ctx, tgBot, update, state, doc.FileID)
+}
+
+func (b *Bot) saveImageFromMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, state *models.UserState, fileID string) {
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
 
-	photos := update.Message.Photo
-	fileID := photos[len(photos)-1].FileID
-
 	switch state.WaitingFor {
 	case models.WaitingSoraImage:
-		b.stateService.SetSoraImage(ctx, userID, fileID)
+		if err := b.stateService.SetSoraImage(ctx, userID, fileID); err != nil {
+			b.handleError(ctx, chatID, err, "Failed to set Sora image")
+			return
+		}
 		tgBot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Изображение сохранено!",
 		})
 		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 	case models.WaitingNanoImage:
-		b.stateService.SetNanoImage(ctx, userID, fileID)
+		if err := b.stateService.SetNanoImage(ctx, userID, fileID); err != nil {
+			b.handleError(ctx, chatID, err, "Failed to set Nano image")
+			return
+		}
 		tgBot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Изображение сохранено! Теперь напишите, что изменить.",
 		})
-		b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt)
+		if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); err != nil {
+			b.handleError(ctx, chatID, err, "Failed to set waiting for Nano prompt")
+		}
 	default:
 		tgBot.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,

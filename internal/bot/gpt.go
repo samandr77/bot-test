@@ -3,10 +3,12 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
 	"github.com/samandr77/bot-test/internal/models"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 )
 
 func (b *Bot) handleGPT(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -16,7 +18,10 @@ func (b *Bot) handleGPT(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 		return
 	}
 
-	b.stateService.SetMode(ctx, userID, models.ModeGPT)
+	if err := b.stateService.SetMode(ctx, userID, models.ModeGPT); err != nil {
+		b.handleError(ctx, chatID, err, "Failed to set GPT mode")
+		return
+	}
 
 	text := `GPT
 
@@ -72,5 +77,8 @@ func (b *Bot) handleGPTMessage(ctx context.Context, tgBot *bot.Bot, update *tgmo
 		ReplyMarkup: kb,
 	})
 
-	b.stateService.SetMode(ctx, userID, models.ModeGPT)
+	if err := b.stateService.SetMode(ctx, userID, models.ModeGPT); err != nil {
+		traceID := logger.GetTraceID(ctx)
+		slog.Error("Failed to reset GPT mode", "handler", "handleGPTMessage", "error", err, "user_id", userID, "traceID", traceID)
+	}
 }

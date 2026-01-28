@@ -8,19 +8,19 @@ import (
 )
 
 type StateService interface {
-	Get(ctx context.Context, userID int64) *models.UserState
-	SetMode(ctx context.Context, userID int64, mode models.UserMode)
-	SetWaitingFor(ctx context.Context, userID int64, waiting models.WaitingFor)
-	ClearWaiting(ctx context.Context, userID int64)
-	SetSoraPrompt(ctx context.Context, userID int64, prompt string)
-	SetSoraImage(ctx context.Context, userID int64, imageURL string)
-	SetSoraDuration(ctx context.Context, userID int64, duration int)
-	SetSoraFormat(ctx context.Context, userID int64, format string)
-	ToggleSoraHD(ctx context.Context, userID int64) bool
-	SetNanoPrompt(ctx context.Context, userID int64, prompt string)
-	SetNanoImage(ctx context.Context, userID int64, imageURL string)
-	ResetSora(ctx context.Context, userID int64)
-	ResetNano(ctx context.Context, userID int64)
+	Get(ctx context.Context, userID int64) (*models.UserState, error)
+	SetMode(ctx context.Context, userID int64, mode models.UserMode) error
+	SetWaitingFor(ctx context.Context, userID int64, waiting models.WaitingFor) error
+	ClearWaiting(ctx context.Context, userID int64) error
+	SetSoraPrompt(ctx context.Context, userID int64, prompt string) error
+	SetSoraImage(ctx context.Context, userID int64, imageURL string) error
+	SetSoraDuration(ctx context.Context, userID int64, duration int) error
+	SetSoraFormat(ctx context.Context, userID int64, format string) error
+	ToggleSoraHD(ctx context.Context, userID int64) (bool, error)
+	SetNanoPrompt(ctx context.Context, userID int64, prompt string) error
+	SetNanoImage(ctx context.Context, userID int64, imageURL string) error
+	ResetSora(ctx context.Context, userID int64) error
+	ResetNano(ctx context.Context, userID int64) error
 }
 
 type stateService struct {
@@ -33,96 +33,134 @@ func NewStateService(repo repository.StateRepository) StateService {
 	}
 }
 
-func (s *stateService) Get(ctx context.Context, userID int64) *models.UserState {
+func (s *stateService) Get(ctx context.Context, userID int64) (*models.UserState, error) {
 	state, err := s.repo.Get(ctx, userID)
 	if err != nil {
-		return models.NewUserState()
+		return nil, err
 	}
-	return state
+	return state, nil
 }
 
 func (s *stateService) save(ctx context.Context, userID int64, state *models.UserState) error {
 	return s.repo.Save(ctx, userID, state)
 }
 
-func (s *stateService) SetMode(ctx context.Context, userID int64, mode models.UserMode) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetMode(ctx context.Context, userID int64, mode models.UserMode) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Mode = mode
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetWaitingFor(ctx context.Context, userID int64, waiting models.WaitingFor) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetWaitingFor(ctx context.Context, userID int64, waiting models.WaitingFor) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.WaitingFor = waiting
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) ClearWaiting(ctx context.Context, userID int64) {
-	state := s.Get(ctx, userID)
+func (s *stateService) ClearWaiting(ctx context.Context, userID int64) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetSoraPrompt(ctx context.Context, userID int64, prompt string) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetSoraPrompt(ctx context.Context, userID int64, prompt string) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Sora.Prompt = prompt
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetSoraImage(ctx context.Context, userID int64, imageURL string) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetSoraImage(ctx context.Context, userID int64, imageURL string) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Sora.ImageURL = imageURL
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetSoraDuration(ctx context.Context, userID int64, duration int) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetSoraDuration(ctx context.Context, userID int64, duration int) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Sora.Duration = duration
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetSoraFormat(ctx context.Context, userID int64, format string) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetSoraFormat(ctx context.Context, userID int64, format string) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Sora.Format = format
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) ToggleSoraHD(ctx context.Context, userID int64) bool {
-	state := s.Get(ctx, userID)
+func (s *stateService) ToggleSoraHD(ctx context.Context, userID int64) (bool, error) {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return false, err
+	}
 	state.Sora.HD = !state.Sora.HD
-	s.save(ctx, userID, state)
-	return state.Sora.HD
+	if err := s.save(ctx, userID, state); err != nil {
+		return false, err
+	}
+	return state.Sora.HD, nil
 }
 
-func (s *stateService) SetNanoPrompt(ctx context.Context, userID int64, prompt string) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetNanoPrompt(ctx context.Context, userID int64, prompt string) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Nano.Prompt = prompt
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) SetNanoImage(ctx context.Context, userID int64, imageURL string) {
-	state := s.Get(ctx, userID)
+func (s *stateService) SetNanoImage(ctx context.Context, userID int64, imageURL string) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Nano.ImageURL = imageURL
 	state.WaitingFor = models.WaitingNone
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) ResetSora(ctx context.Context, userID int64) {
-	state := s.Get(ctx, userID)
+func (s *stateService) ResetSora(ctx context.Context, userID int64) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Sora = models.SoraSettings{
 		Duration: 10,
 		Format:   "16:9",
 		HD:       false,
 	}
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }
 
-func (s *stateService) ResetNano(ctx context.Context, userID int64) {
-	state := s.Get(ctx, userID)
+func (s *stateService) ResetNano(ctx context.Context, userID int64) error {
+	state, err := s.Get(ctx, userID)
+	if err != nil {
+		return err
+	}
 	state.Nano = models.NanoSettings{}
-	s.save(ctx, userID, state)
+	return s.save(ctx, userID, state)
 }

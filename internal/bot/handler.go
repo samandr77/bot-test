@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
+	"github.com/samandr77/bot-test/internal/pkg/logger"
 )
 
 func (b *Bot) getChatID(update *tgmodels.Update) int64 {
@@ -31,8 +32,15 @@ func (b *Bot) getUserID(update *tgmodels.Update) int64 {
 
 func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	chatID := b.getChatID(update)
-	if chatID == 0 {
+	userID := b.getUserID(update)
+	if chatID == 0 || userID == 0 {
 		return
+	}
+
+	traceID := logger.GetTraceID(ctx)
+
+	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
+		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", err, "user_id", userID)
 	}
 
 	if update.CallbackQuery != nil {
@@ -63,7 +71,8 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	}
 
 	data := update.CallbackQuery.Data
-	slog.Debug("Callback received", "data", data)
+	traceID := logger.GetTraceID(ctx)
+	slog.Info("Callback received", "handler", "handleCallback", "data", data, "traceID", traceID)
 
 	switch {
 	case data == "menu":

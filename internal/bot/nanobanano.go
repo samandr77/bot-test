@@ -118,7 +118,7 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch data {
-	case "nano:start":
+	case "nano", "nano:start":
 		b.handleNanoBanana(ctx, tgBot, update)
 	case "nano:prompt":
 		b.showNanoPromptScreen(ctx, tgBot, chatID, userID)
@@ -153,7 +153,13 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 	}
 
 	if state.Nano.Prompt == "" && state.Nano.ImageURL == "" {
-		b.sendMessage(ctx, chatID, "Сначала укажите промпт или загрузите изображение.", nil)
+		kb := &tgmodels.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+				{{Text: "Добавить промпт", CallbackData: "nano:prompt"}, {Text: "Изображение", CallbackData: "nano:images"}},
+				{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
+			},
+		}
+		b.sendMessage(ctx, chatID, "Сначала укажите промпт или загрузите изображение.", kb)
 		return
 	}
 
@@ -183,6 +189,10 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 	}
 
 	b.sendMessage(ctx, chatID, text, kb)
+
+	if err := b.service.UseCredits(ctx, userID, "nanobanano"); err != nil {
+		slog.Error("Failed to deduct NanoBanana credits", "error", err, "user_id", userID)
+	}
 
 	if err := b.stateService.ResetNano(ctx, userID); err != nil {
 		slog.Error("Failed to reset Nano state", "error", err, "user_id", userID)

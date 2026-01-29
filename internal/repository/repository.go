@@ -14,6 +14,7 @@ type Repository interface {
 	GetBalance(ctx context.Context, userID int64) (*models.Balance, error)
 	SaveUser(ctx context.Context, user *models.User) error
 	UpdateUser(ctx context.Context, user *models.User) error
+	Update(ctx context.Context, balance *models.Balance) error
 	AddCredits(ctx context.Context, userID int64, modelType string, amount int) error
 	GetUserByID(ctx context.Context, id int64) (*models.User, error)
 	GetCredits(ctx context.Context, userID int64, modelType string) (int, error)
@@ -102,22 +103,43 @@ func (r *Repo) UpdateUser(ctx context.Context, user *models.User) error {
 	}).Error
 }
 
-func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
-	column := ""
-	switch modelType {
-	case "gpt":
-		column = "gpt_credits"
-	case "sora2":
-		column = "sora_credits"
-	case "nanobanano":
-		column = "nanobanano_credits"
-	default:
-		return fmt.Errorf("неизвестный тип модели: %s", modelType)
-	}
+func (r *Repo) Update(ctx context.Context, balance *models.Balance) error {
+	return r.DB.WithContext(ctx).Save(balance).Error
+}
 
-	return r.DB.WithContext(ctx).Model(&models.Balance{}).
-		Where("user_id = ?", userID).
-		UpdateColumn(column, gorm.Expr(column+" + ?", amount)).Error
+func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
+	slog.Info("AddCredits called", "userID", userID, "modelType", modelType, "amount", amount)
+
+	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var balance models.Balance
+		if err := tx.Where("user_id = ?", userID).FirstOrCreate(&balance, models.Balance{UserID: userID}).Error; err != nil {
+			slog.Error("Failed to get/create balance in transaction", "error", err, "userID", userID)
+			return fmt.Errorf("failed to get/create balance: %w", err)
+		}
+
+		slog.Info("Balance before update", "userID", userID, "gpt", balance.GptCredits, "sora", balance.SoraCredits, "nano", balance.NanobananaCredits)
+
+		switch modelType {
+		case "gpt":
+			balance.GptCredits += amount
+		case "sora2":
+			balance.SoraCredits += amount
+		case "nanobanana", "nanobanano":
+			balance.NanobananaCredits += amount
+		default:
+			return fmt.Errorf("неизвестный тип модели: %s", modelType)
+		}
+
+		slog.Info("Balance after update", "userID", userID, "gpt", balance.GptCredits, "sora", balance.SoraCredits, "nano", balance.NanobananaCredits)
+
+		if saveErr := tx.Save(&balance).Error; saveErr != nil {
+			slog.Error("Failed to save balance", "error", saveErr, "userID", userID)
+			return saveErr
+		}
+
+		slog.Info("Balance saved successfully", "userID", userID)
+		return nil
+	})
 }
 
 func (r *Repo) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
@@ -142,7 +164,7 @@ func (r *Repo) GetCredits(ctx context.Context, userID int64, modelType string) (
 		return balance.GptCredits, nil
 	case "sora2":
 		return balance.SoraCredits, nil
-	case "nanobanano":
+	case "nanobanana", "nanobanano":
 		return balance.NanobananaCredits, nil
 	default:
 		return 0, fmt.Errorf("unknown model type: %s", modelType)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
@@ -179,11 +180,7 @@ func (b *Bot) handleDocumentMessage(ctx context.Context, tgBot *bot.Bot, update 
 		return
 	}
 
-	isImage := false
-	switch doc.MimeType {
-	case "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif":
-		isImage = true
-	}
+	isImage := strings.HasPrefix(doc.MimeType, "image/")
 
 	if !isImage {
 		b.sendMessage(ctx, update.Message.Chat.ID, "Пожалуйста, отправьте изображение (в формате JPG, PNG, WEBP).", nil)
@@ -210,7 +207,9 @@ func (b *Bot) saveImageFromMessage(ctx context.Context, tgBot *bot.Bot, update *
 			b.handleError(ctx, chatID, err, "Failed to set Nano image")
 			return
 		}
-		b.sendMessage(ctx, chatID, "Изображение сохранено! Теперь напишите, что изменить.", nil)
+
+		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+
 		if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); err != nil {
 			b.handleError(ctx, chatID, err, "Failed to set waiting for Nano prompt")
 		}

@@ -147,7 +147,7 @@ func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch {
-	case data == "sora:start":
+	case data == "sora" || data == "sora:start":
 		b.handleSora2(ctx, tgBot, update)
 	case data == "sora:prompt":
 		b.showSoraPromptScreen(ctx, tgBot, chatID, userID)
@@ -223,7 +223,18 @@ func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 	}
 
 	if state.Sora.Prompt == "" {
-		b.sendMessage(ctx, chatID, "Сначала укажите промпт для генерации", nil)
+		text := "Сначала укажите промпт для генерации."
+		if state.Sora.ImageURL != "" {
+			text = "Вы добавили изображение, теперь добавьте описание (промпт) для видео."
+		}
+
+		kb := &tgmodels.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+				{{Text: "Добавить промпт", CallbackData: "sora:prompt"}},
+				{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
+			},
+		}
+		b.sendMessage(ctx, chatID, text, kb)
 		return
 	}
 
@@ -249,6 +260,10 @@ HD: %v
 	}
 
 	b.sendMessage(ctx, chatID, text, kb)
+
+	if err := b.service.UseCredits(ctx, userID, "sora2"); err != nil {
+		slog.Error("Failed to deduct Sora credits", "error", err, "user_id", userID)
+	}
 
 	if err := b.stateService.ResetSora(ctx, userID); err != nil {
 		slog.Error("Failed to reset Sora state", "error", err, "user_id", userID)

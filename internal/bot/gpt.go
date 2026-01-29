@@ -42,7 +42,7 @@ func (b *Bot) handleGPTCallback(ctx context.Context, tgBot *bot.Bot, update *tgm
 	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch data {
-	case "gpt:start":
+	case "gpt", "gpt:start":
 		b.handleGPT(ctx, tgBot, update)
 	}
 }
@@ -76,6 +76,10 @@ func (b *Bot) handleGPTMessage(ctx context.Context, tgBot *bot.Bot, update *tgmo
 	}
 
 	b.sendMessage(ctx, chatID, response, kb)
+	if err := b.service.UseCredits(ctx, userID, "gpt"); err != nil {
+		traceID := logger.GetTraceID(ctx)
+		slog.Error("Failed to deduct GPT credits", "handler", "handleGPTMessage", "error", err, "user_id", userID, "traceID", traceID)
+	}
 
 	if err := b.stateService.SetMode(ctx, userID, models.ModeGPT); err != nil {
 		traceID := logger.GetTraceID(ctx)

@@ -71,11 +71,13 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	switch {
 	case data == "menu":
 		b.handleMenu(ctx, tgBot, update)
-	case strings.HasPrefix(data, "gpt:"):
+	case data == "gpt" || strings.HasPrefix(data, "gpt:"):
 		b.handleGPTCallback(ctx, tgBot, update)
-	case strings.HasPrefix(data, "sora:"):
+	case data == "sora" || strings.HasPrefix(data, "sora:"):
 		b.handleSoraCallback(ctx, tgBot, update)
-	case strings.HasPrefix(data, "nano:"):
+	case data == "nano" || strings.HasPrefix(data, "nano:"):
+		b.handleNanoCallback(ctx, tgBot, update)
+	case data == "nanobanana" || strings.HasPrefix(data, "nanobanana:"):
 		b.handleNanoCallback(ctx, tgBot, update)
 	case strings.HasPrefix(data, "balance:"):
 		b.handleBalanceCallback(ctx, tgBot, update)
@@ -100,15 +102,28 @@ func (b *Bot) handleBalanceCallback(ctx context.Context, tgBot *bot.Bot, update 
 }
 
 func (b *Bot) handleBuyCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	b.answerCallback(ctx, update.CallbackQuery.ID)
+
 	data := update.CallbackQuery.Data
+	userID := b.getUserID(update)
+	traceID := logger.GetTraceID(ctx)
+
+	slog.Info("Buy callback received", "data", data, "userID", userID, "traceID", traceID)
+
 	switch data {
 	case "buy:start":
+		slog.Info("Opening buy menu", "userID", userID, "traceID", traceID)
 		b.handleBuyMenu(ctx, tgBot, update)
 	case "buy:gpt_5":
+		slog.Info("Creating invoice for GPT", "userID", userID, "amount", 5, "traceID", traceID)
 		b.handleCreateInvoice(ctx, tgBot, update, "gpt", 5, 200)
-	case "buy:sora_1":
+	case "buy:sora2_1":
+		slog.Info("Creating invoice for Sora2", "userID", userID, "amount", 1, "traceID", traceID)
 		b.handleCreateInvoice(ctx, tgBot, update, "sora2", 1, 1000)
-	case "buy:nano_5":
-		b.handleCreateInvoice(ctx, tgBot, update, "nanobanano", 5, 500)
+	case "buy:nanobanana_1":
+		slog.Info("Creating invoice for NanoBanana", "userID", userID, "amount", 1, "traceID", traceID)
+		b.handleCreateInvoice(ctx, tgBot, update, "nanobanana", 1, 500)
+	default:
+		slog.Warn("Unknown buy callback", "data", data, "userID", userID, "traceID", traceID)
 	}
 }

@@ -50,8 +50,8 @@ func (b *Bot) handleBuyMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
 			{{Text: "GPT: 5 запросов - 200 руб", CallbackData: "buy:gpt_5"}},
-			{{Text: "Sora 2: 1 генерация - 1000 руб", CallbackData: "buy:sora_1"}},
-			{{Text: "NanoBanana: 5 генераций - 500 руб", CallbackData: "buy:nano_5"}},
+			{{Text: "Sora 2: 1 генерация - 1000 руб", CallbackData: "buy:sora2_1"}},
+			{{Text: "NanoBanana: 1 генерация - 500 руб", CallbackData: "buy:nanobanana_1"}},
 			{{Text: "Назад в меню", CallbackData: "menu"}},
 		},
 	}
@@ -66,6 +66,10 @@ func (b *Bot) handleBuyMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodel
 }
 
 func (b *Bot) handleCreateInvoice(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update, modelType string, amount int, price int) {
+	if b.paymentProviderToken == "" {
+		slog.Error("Payment provider token is empty! Cannot create invoice.")
+		return
+	}
 	chatID := b.getChatID(update)
 	if chatID == 0 {
 		return
@@ -130,10 +134,15 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 		"telegramPaymentID", payment.TelegramPaymentChargeID,
 	)
 
+	slog.Info("Attempting to add credits", "userID", userID, "modelType", modelType, "amount", amount)
+
 	if addErr := b.service.AddCredits(ctx, userID, modelType, amount); addErr != nil {
+		slog.Error("Failed to add credits", "error", addErr, "userID", userID, "modelType", modelType, "amount", amount)
 		b.handleError(ctx, update.Message.Chat.ID, addErr, "Failed to add credits after payment")
 		return
 	}
+
+	slog.Info("Credits added successfully", "userID", userID, "modelType", modelType, "amount", amount)
 
 	balanceText, err := b.service.GetBalance(ctx, userID)
 	if err != nil {
@@ -144,11 +153,11 @@ func (b *Bot) handleSuccessfulPayment(ctx context.Context, tgBot *bot.Bot, updat
 	var modelButton tgmodels.InlineKeyboardButton
 	switch modelType {
 	case "gpt":
-		modelButton = tgmodels.InlineKeyboardButton{Text: "GPT", CallbackData: "gpt:start"}
+		modelButton = tgmodels.InlineKeyboardButton{Text: "GPT", CallbackData: "gpt"}
 	case "sora2":
-		modelButton = tgmodels.InlineKeyboardButton{Text: "Sora 2", CallbackData: "sora:start"}
-	case "nanobanano":
-		modelButton = tgmodels.InlineKeyboardButton{Text: "NanoBanana", CallbackData: "nano:start"}
+		modelButton = tgmodels.InlineKeyboardButton{Text: "Sora 2", CallbackData: "sora"}
+	case "nanobanana", "nanobanano":
+		modelButton = tgmodels.InlineKeyboardButton{Text: "NanoBanana", CallbackData: "nano"}
 	default:
 		modelButton = tgmodels.InlineKeyboardButton{Text: "Меню", CallbackData: "menu"}
 	}

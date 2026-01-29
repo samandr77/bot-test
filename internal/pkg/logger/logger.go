@@ -38,9 +38,16 @@ func Init(level string) {
 		slogLevel = slog.LevelInfo
 	}
 
-	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slogLevel,
-	})
+	var handler slog.Handler
+	if os.Getenv("APP_ENV") == "production" {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slogLevel,
+		})
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slogLevel,
+		})
+	}
 
 	logger := slog.New(handler)
 	slog.SetDefault(logger)

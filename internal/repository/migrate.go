@@ -14,20 +14,24 @@ import (
 var embedMigrations embed.FS
 
 func RunMigrations(dsn string) error {
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return fmt.Errorf("ошибка открытия соединения для миграций: %w", err)
+	db, openErr := sql.Open("postgres", dsn)
+	if openErr != nil {
+		return fmt.Errorf("ошибка открытия соединения для миграций: %w", openErr)
 	}
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Error("Failed to close database during migration", "error", closeErr)
+		}
+	}()
 
 	goose.SetBaseFS(embedMigrations)
 
-	if err := goose.SetDialect("postgres"); err != nil {
-		return fmt.Errorf("ошибка установки диалекта goose: %w", err)
+	if dialectErr := goose.SetDialect("postgres"); dialectErr != nil {
+		return fmt.Errorf("ошибка установки диалекта goose: %w", dialectErr)
 	}
 
-	if err := goose.Up(db, "migrations"); err != nil {
-		return fmt.Errorf("ошибка применения миграций: %w", err)
+	if upErr := goose.Up(db, "migrations"); upErr != nil {
+		return fmt.Errorf("ошибка применения миграций: %w", upErr)
 	}
 
 	slog.Info("Миграции успешно применены")

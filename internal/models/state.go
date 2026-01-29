@@ -33,19 +33,31 @@ type NanoSettings struct {
 }
 
 type UserState struct {
-	Mode       UserMode     `json:"mode"`
-	WaitingFor WaitingFor   `json:"waiting_for"`
-	Sora       SoraSettings `json:"sora"`
-	Nano       NanoSettings `json:"nano"`
+	Mode             UserMode          `json:"mode"`
+	WaitingFor       WaitingFor        `json:"waiting_for"`
+	Sora             SoraSettings      `json:"sora"`
+	Nano             NanoSettings      `json:"nano"`
+	Temperature      float64           `json:"temperature"`
+	LastMessageID    int               `json:"last_message_id"`
+	LastPrompt       string            `json:"last_prompt"`
+	LastResponseKeys map[string]string `json:"last_response_keys"`
 }
+
+const (
+	DefaultSoraDuration = 10
+	DefaultSoraFormat   = "16:9"
+	DefaultTemperature  = 0.7
+)
 
 func NewUserState() *UserState {
 	return &UserState{
 		Mode: ModeNone,
 		Sora: SoraSettings{
-			Duration: 10,
-			Format:   "16:9",
+			Duration: DefaultSoraDuration,
+			Format:   DefaultSoraFormat,
 			HD:       false,
 		},
+		Temperature:      DefaultTemperature,
+		LastResponseKeys: make(map[string]string),
 	}
 }

@@ -39,30 +39,24 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 
 	traceID := logger.GetTraceID(ctx)
 
-	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
-		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", err, "user_id", userID)
+	if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
+		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", clearErr, "user_id", userID)
 	}
 
 	if update.CallbackQuery != nil {
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-			CallbackQueryID: update.CallbackQuery.ID,
-		})
+		b.answerCallback(ctx, update.CallbackQuery.ID)
 	}
 
 	text := "Выберите нужную модель или команду:"
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "gpt", CallbackData: "gpt:start"}, {Text: "sora2", CallbackData: "sora:start"}},
-			{{Text: "nanobanano", CallbackData: "nano:start"}},
-			{{Text: "balance", CallbackData: "balance:start"}},
+			{{Text: "🤖 GPT", CallbackData: "gpt:start"}, {Text: "🎥 Sora 2", CallbackData: "sora:start"}},
+			{{Text: "🍌 NanoBanana", CallbackData: "nano:start"}},
+			{{Text: "💰 Баланс", CallbackData: "balance:start"}},
 		},
 	}
 
-	tgBot.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID:      chatID,
-		Text:        text,
-		ReplyMarkup: kb,
-	})
+	b.sendMessage(ctx, chatID, text, kb)
 }
 
 func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -77,21 +71,25 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	switch {
 	case data == "menu":
 		b.handleMenu(ctx, tgBot, update)
-	case strings.HasPrefix(data, "gpt:"):
+	case data == "gpt" || strings.HasPrefix(data, "gpt:"):
 		b.handleGPTCallback(ctx, tgBot, update)
-	case strings.HasPrefix(data, "sora:"):
+	case data == "sora" || strings.HasPrefix(data, "sora:"):
 		b.handleSoraCallback(ctx, tgBot, update)
-	case strings.HasPrefix(data, "nano:"):
+	case data == "nano" || strings.HasPrefix(data, "nano:"):
+		b.handleNanoCallback(ctx, tgBot, update)
+	case data == "nanobanana" || strings.HasPrefix(data, "nanobanana:"):
 		b.handleNanoCallback(ctx, tgBot, update)
 	case strings.HasPrefix(data, "balance:"):
 		b.handleBalanceCallback(ctx, tgBot, update)
 	case strings.HasPrefix(data, "buy:"):
 		b.handleBuyCallback(ctx, tgBot, update)
 	default:
-		tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		if _, answerErr := tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            "Эта функция будет доступна позже",
-		})
+		}); answerErr != nil {
+			slog.Error("Failed to answer callback query with text", "error", answerErr, "callback_id", update.CallbackQuery.ID)
+		}
 	}
 }
 
@@ -104,15 +102,28 @@ func (b *Bot) handleBalanceCallback(ctx context.Context, tgBot *bot.Bot, update 
 }
 
 func (b *Bot) handleBuyCallback(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
+	b.answerCallback(ctx, update.CallbackQuery.ID)
+
 	data := update.CallbackQuery.Data
+	userID := b.getUserID(update)
+	traceID := logger.GetTraceID(ctx)
+
+	slog.Info("Buy callback received", "data", data, "userID", userID, "traceID", traceID)
+
 	switch data {
 	case "buy:start":
+		slog.Info("Opening buy menu", "userID", userID, "traceID", traceID)
 		b.handleBuyMenu(ctx, tgBot, update)
 	case "buy:gpt_5":
+		slog.Info("Creating invoice for GPT", "userID", userID, "amount", 5, "traceID", traceID)
 		b.handleCreateInvoice(ctx, tgBot, update, "gpt", 5, 200)
-	case "buy:sora_1":
+	case "buy:sora2_1":
+		slog.Info("Creating invoice for Sora2", "userID", userID, "amount", 1, "traceID", traceID)
 		b.handleCreateInvoice(ctx, tgBot, update, "sora2", 1, 1000)
-	case "buy:nano_5":
-		b.handleCreateInvoice(ctx, tgBot, update, "nanobanano", 5, 500)
+	case "buy:nanobanana_1":
+		slog.Info("Creating invoice for NanoBanana", "userID", userID, "amount", 1, "traceID", traceID)
+		b.handleCreateInvoice(ctx, tgBot, update, "nanobanana", 1, 500)
+	default:
+		slog.Warn("Unknown buy callback", "data", data, "userID", userID, "traceID", traceID)
 	}
 }

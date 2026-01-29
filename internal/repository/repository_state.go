@@ -27,9 +27,9 @@ type RedisStateRepository struct {
 }
 
 func NewRedisStateRepository(redisURL string) (*RedisStateRepository, error) {
-	opt, err := redis.ParseURL(redisURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid redis URL: %w", err)
+	opt, parseErr := redis.ParseURL(redisURL)
+	if parseErr != nil {
+		return nil, fmt.Errorf("invalid redis URL: %w", parseErr)
 	}
 
 	opt.DialTimeout = 10 * time.Second
@@ -45,8 +45,8 @@ func NewRedisStateRepository(redisURL string) (*RedisStateRepository, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("redis connection failed: %w", err)
+	if pingErr := client.Ping(ctx).Err(); pingErr != nil {
+		return nil, fmt.Errorf("redis connection failed: %w", pingErr)
 	}
 
 	return &RedisStateRepository{
@@ -61,14 +61,14 @@ func (r *RedisStateRepository) key(userID int64) string {
 
 func (r *RedisStateRepository) Get(ctx context.Context, userID int64) (*models.UserState, error) {
 	var data []byte
-	var err error
+	var lastErr error
 
 	for attempt := 1; attempt <= redisMaxRetries; attempt++ {
-		data, err = r.client.Get(ctx, r.key(userID)).Bytes()
-		if err == nil {
+		data, lastErr = r.client.Get(ctx, r.key(userID)).Bytes()
+		if lastErr == nil {
 			break
 		}
-		if err == redis.Nil {
+		if lastErr == redis.Nil {
 			return models.NewUserState(), nil
 		}
 		if attempt < redisMaxRetries {
@@ -76,33 +76,34 @@ func (r *RedisStateRepository) Get(ctx context.Context, userID int64) (*models.U
 				"attempt", attempt,
 				"max_retries", redisMaxRetries,
 				"user_id", userID,
-				"error", err,
+				"error", lastErr,
 			)
 			time.Sleep(redisRetryBaseDelay * time.Duration(attempt))
 		}
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get state from redis after %d retries: %w", redisMaxRetries, err)
+	if lastErr != nil {
+		return nil, fmt.Errorf("failed to get state from redis after %d retries: %w", redisMaxRetries, lastErr)
 	}
 
 	var state models.UserState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal user state: %w", err)
+	if unmarshalErr := json.Unmarshal(data, &state); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to unmarshal user state: %w", unmarshalErr)
 	}
 
 	return &state, nil
 }
 
 func (r *RedisStateRepository) Save(ctx context.Context, userID int64, state *models.UserState) error {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("failed to marshal user state: %w", err)
+	data, marshalErr := json.Marshal(state)
+	if marshalErr != nil {
+		return fmt.Errorf("failed to marshal user state: %w", marshalErr)
 	}
 
+	var lastErr error
 	for attempt := 1; attempt <= redisMaxRetries; attempt++ {
-		err = r.client.Set(ctx, r.key(userID), data, r.ttl).Err()
-		if err == nil {
+		lastErr = r.client.Set(ctx, r.key(userID), data, r.ttl).Err()
+		if lastErr == nil {
 			return nil
 		}
 		if attempt < redisMaxRetries {
@@ -110,15 +111,19 @@ func (r *RedisStateRepository) Save(ctx context.Context, userID int64, state *mo
 				"attempt", attempt,
 				"max_retries", redisMaxRetries,
 				"user_id", userID,
-				"error", err,
+				"error", lastErr,
 			)
 			time.Sleep(redisRetryBaseDelay * time.Duration(attempt))
 		}
 	}
 
-	return fmt.Errorf("failed to set state in redis after %d retries: %w", redisMaxRetries, err)
+	return fmt.Errorf("failed to set state in redis after %d retries: %w", redisMaxRetries, lastErr)
 }
 
 func (r *RedisStateRepository) Close() error {
-	return r.client.Close()
+	closeErr := r.client.Close()
+	if closeErr != nil {
+		return fmt.Errorf("failed to close redis client: %w", closeErr)
+	}
+	return nil
 }

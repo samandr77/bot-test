@@ -23,7 +23,7 @@ func (b *Bot) LoggingMiddleware(next bot.HandlerFunc) bot.HandlerFunc {
 
 		var username string
 		var chatType string
-		var updateID int64 = update.ID
+		updateID := update.ID
 		var messageID int
 
 		if update.Message != nil {

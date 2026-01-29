@@ -7,7 +7,9 @@ import (
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
+	"github.com/samandr77/bot-test/internal/ai"
 	"github.com/samandr77/bot-test/internal/models"
+	"github.com/samandr77/bot-test/internal/service"
 )
 
 func (b *Bot) handleNanoBanana(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -21,25 +23,17 @@ func (b *Bot) handleNanoBanana(ctx context.Context, tgBot *bot.Bot, update *tgmo
 		b.handleError(ctx, chatID, modeErr, "Failed to set Nano mode")
 		return
 	}
-	b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+	b.showNanoMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) showNanoMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) showNanoMainScreen(ctx context.Context, chatID, userID int64) {
 	state, getErr := b.stateService.Get(ctx, userID)
 	if getErr != nil {
 		b.handleError(ctx, chatID, getErr, "Failed to get user state for Nano main screen")
 		return
 	}
 
-	promptText := "не указан"
-	if state.Nano.Prompt != "" {
-		runes := []rune(state.Nano.Prompt)
-		if len(runes) > 50 {
-			promptText = string(runes[:50]) + "..."
-		} else {
-			promptText = state.Nano.Prompt
-		}
-	}
+	promptText := truncateText(state.Nano.Prompt, maxPromptPreviewLength, "не указан")
 
 	imageText := "не добавлено"
 	if state.Nano.ImageURL != "" {
@@ -63,7 +57,7 @@ func (b *Bot) showNanoMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 	b.sendMessage(ctx, chatID, text, kb)
 }
 
-func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) showNanoPromptScreen(ctx context.Context, chatID, userID int64) {
 	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); waitErr != nil {
 		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano prompt")
 		return
@@ -82,7 +76,7 @@ func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 	b.sendMessage(ctx, chatID, text, kb)
 }
 
-func (b *Bot) showNanoImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) showNanoImageScreen(ctx context.Context, chatID, userID int64) {
 	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoImage); waitErr != nil {
 		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano image")
 		return
@@ -112,22 +106,22 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	case "nano", "nano:start":
 		b.handleNanoBanana(ctx, tgBot, update)
 	case "nano:prompt":
-		b.showNanoPromptScreen(ctx, tgBot, chatID, userID)
+		b.showNanoPromptScreen(ctx, chatID, userID)
 	case "nano:images":
-		b.showNanoImageScreen(ctx, tgBot, chatID, userID)
+		b.showNanoImageScreen(ctx, chatID, userID)
 	case "nano:back":
 		if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
 			b.handleError(ctx, chatID, clearErr, "Failed to clear waiting for Nano")
 			return
 		}
-		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+		b.showNanoMainScreen(ctx, chatID, userID)
 	case "nano:generate":
-		b.handleNanoGenerate(ctx, tgBot, chatID, userID)
+		b.handleNanoGenerate(ctx, chatID, userID)
 	}
 }
 
-func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, "nanobanano")
+func (b *Bot) handleNanoGenerate(ctx context.Context, chatID, userID int64) {
+	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, service.ModelNanoBanana)
 	if creditsErr != nil {
 		b.handleError(ctx, chatID, creditsErr, "Failed to check NanoBanana credits")
 		return
@@ -154,12 +148,15 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		return
 	}
 
-	text := fmt.Sprintf(`Генерация изображения запущена!
+	b.sendTyping(ctx, chatID)
 
-Промпт: %s
-Изображение: %s
+	systemPrompt := fmt.Sprintf(`Ты - AI ассистент для генерации описаний изображений.
+Пользователь хочет создать изображение со следующими параметрами:
+- Промпт: %s
+- Исходное изображение: %s
 
-(Это заглушка - реальная генерация будет добавлена позже)`,
+Создай детальное и креативное описание того, как будет выглядеть это изображение.
+Опиши композицию, цвета, стиль, настроение. Пиши на русском языке, 2-3 абзаца.`,
 		func() string {
 			if state.Nano.Prompt != "" {
 				return state.Nano.Prompt
@@ -168,19 +165,32 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		}(),
 		func() string {
 			if state.Nano.ImageURL != "" {
-				return "загружено"
+				return "загружено (будет использовано как основа)"
 			}
-			return "не загружено"
+			return "нет"
 		}())
+
+	aiMessages := []ai.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: "Создай описание изображения"},
+	}
+
+	response, aiErr := b.aiClient.Chat(ctx, aiMessages)
+	if aiErr != nil {
+		b.handleError(ctx, chatID, aiErr, "Failed to generate image description")
+		return
+	}
+
+	text := fmt.Sprintf("✅ Генерация изображения завершена!\n\n%s", response)
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
 			{{Text: "🍌 NanoBanana", CallbackData: "nano:start"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
-	b.sendMessage(ctx, chatID, "✅ "+text, kb)
+	b.sendMessage(ctx, chatID, text, kb)
 
-	if usageErr := b.service.UseCredits(ctx, userID, "nanobanano"); usageErr != nil {
+	if usageErr := b.service.UseCredits(ctx, userID, service.ModelNanoBanana); usageErr != nil {
 		slog.Error("Failed to deduct NanoBanana credits", "error", usageErr, "user_id", userID)
 	}
 

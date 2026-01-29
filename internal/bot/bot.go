@@ -172,14 +172,14 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 			b.handleError(ctx, chatID, promptErr, "Failed to set Sora prompt")
 			return
 		}
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+		b.showSoraMainScreen(ctx, chatID, userID)
 		return
 	case models.WaitingNanoPrompt:
 		if promptErr := b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text); promptErr != nil {
 			b.handleError(ctx, chatID, promptErr, "Failed to set Nano prompt")
 			return
 		}
-		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+		b.showNanoMainScreen(ctx, chatID, userID)
 		return
 	case models.WaitingSoraImage:
 		b.sendMessage(ctx, chatID, "Пожалуйста, отправьте изображение, а не текст.\n\nЕсли хотите добавить описание к видео, используйте раздел «Промпт».", &tgmodels.InlineKeyboardMarkup{
@@ -233,14 +233,14 @@ func (b *Bot) saveImageFromMessage(ctx context.Context, tgBot *bot.Bot, update *
 			return
 		}
 		b.sendMessage(ctx, chatID, "Изображение сохранено!", nil)
-		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+		b.showSoraMainScreen(ctx, chatID, userID)
 	case models.WaitingNanoImage:
 		if imageErr := b.stateService.SetNanoImage(ctx, userID, fileID); imageErr != nil {
 			b.handleError(ctx, chatID, imageErr, "Failed to set Nano image")
 			return
 		}
 
-		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
+		b.showNanoMainScreen(ctx, chatID, userID)
 
 		if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); waitErr != nil {
 			b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano prompt")

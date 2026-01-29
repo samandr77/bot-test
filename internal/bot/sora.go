@@ -9,8 +9,12 @@ import (
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
+	"github.com/samandr77/bot-test/internal/ai"
 	"github.com/samandr77/bot-test/internal/models"
+	"github.com/samandr77/bot-test/internal/service"
 )
+
+const maxPromptPreviewLength = 50
 
 func (b *Bot) handleSora2(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	chatID := b.getChatID(update)
@@ -23,24 +27,28 @@ func (b *Bot) handleSora2(ctx context.Context, tgBot *bot.Bot, update *tgmodels.
 		b.handleError(ctx, chatID, modeErr, "Failed to set Sora mode")
 		return
 	}
-	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	b.showSoraMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func truncateText(text string, maxLen int, defaultText string) string {
+	if text == "" {
+		return defaultText
+	}
+	runes := []rune(text)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen]) + "..."
+	}
+	return text
+}
+
+func (b *Bot) showSoraMainScreen(ctx context.Context, chatID, userID int64) {
 	state, getErr := b.stateService.Get(ctx, userID)
 	if getErr != nil {
 		b.handleError(ctx, chatID, getErr, "Failed to get user state for Sora main screen")
 		return
 	}
 
-	promptText := "не указан"
-	if state.Sora.Prompt != "" {
-		if len(state.Sora.Prompt) > 50 {
-			promptText = state.Sora.Prompt[:50] + "..."
-		} else {
-			promptText = state.Sora.Prompt
-		}
-	}
+	promptText := truncateText(state.Sora.Prompt, maxPromptPreviewLength, "не указан")
 
 	imageText := "не добавлено"
 	if state.Sora.ImageURL != "" {
@@ -102,7 +110,7 @@ func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 	b.sendMessage(ctx, chatID, text, kb)
 }
 
-func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) showSoraPromptScreen(ctx context.Context, chatID, userID int64) {
 	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraPrompt); waitErr != nil {
 		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Sora prompt")
 		return
@@ -122,7 +130,7 @@ func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 	b.sendMessage(ctx, chatID, text, kb)
 }
 
-func (b *Bot) showSoraImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) showSoraImageScreen(ctx context.Context, chatID, userID int64) {
 	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraImage); waitErr != nil {
 		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Sora image")
 		return
@@ -150,31 +158,31 @@ func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	case data == "sora" || data == "sora:start":
 		b.handleSora2(ctx, tgBot, update)
 	case data == "sora:prompt":
-		b.showSoraPromptScreen(ctx, tgBot, chatID, userID)
+		b.showSoraPromptScreen(ctx, chatID, userID)
 	case data == "sora:image":
-		b.showSoraImageScreen(ctx, tgBot, chatID, userID)
+		b.showSoraImageScreen(ctx, chatID, userID)
 	case data == "sora:back":
-		b.handleSoraBack(ctx, tgBot, chatID, userID)
+		b.handleSoraBack(ctx, chatID, userID)
 	case strings.HasPrefix(data, "sora:dur_"):
-		b.handleSoraDuration(ctx, tgBot, chatID, userID, data)
+		b.handleSoraDuration(ctx, chatID, userID, data)
 	case strings.HasPrefix(data, "sora:fmt_"):
-		b.handleSoraFormat(ctx, tgBot, chatID, userID, data)
+		b.handleSoraFormat(ctx, chatID, userID, data)
 	case data == "sora:hd":
-		b.handleSoraHD(ctx, tgBot, chatID, userID)
+		b.handleSoraHD(ctx, chatID, userID)
 	case data == "sora:generate":
-		b.handleSoraGenerate(ctx, tgBot, chatID, userID)
+		b.handleSoraGenerate(ctx, chatID, userID)
 	}
 }
 
-func (b *Bot) handleSoraBack(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) handleSoraBack(ctx context.Context, chatID, userID int64) {
 	if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
 		b.handleError(ctx, chatID, clearErr, "Failed to clear waiting for Sora")
 		return
 	}
-	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	b.showSoraMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) handleSoraDuration(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
+func (b *Bot) handleSoraDuration(ctx context.Context, chatID, userID int64, data string) {
 	durStr := strings.TrimPrefix(data, "sora:dur_")
 	dur, parseErr := strconv.Atoi(durStr)
 	if parseErr != nil {
@@ -185,28 +193,28 @@ func (b *Bot) handleSoraDuration(ctx context.Context, tgBot *bot.Bot, chatID, us
 		b.handleError(ctx, chatID, setErr, "Failed to set Sora duration")
 		return
 	}
-	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	b.showSoraMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) handleSoraFormat(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
+func (b *Bot) handleSoraFormat(ctx context.Context, chatID, userID int64, data string) {
 	format := strings.ReplaceAll(strings.TrimPrefix(data, "sora:fmt_"), "_", ":")
 	if setErr := b.stateService.SetSoraFormat(ctx, userID, format); setErr != nil {
 		b.handleError(ctx, chatID, setErr, "Failed to set Sora format")
 		return
 	}
-	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	b.showSoraMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) handleSoraHD(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
+func (b *Bot) handleSoraHD(ctx context.Context, chatID, userID int64) {
 	if _, toggleErr := b.stateService.ToggleSoraHD(ctx, userID); toggleErr != nil {
 		b.handleError(ctx, chatID, toggleErr, "Failed to toggle Sora HD")
 		return
 	}
-	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
+	b.showSoraMainScreen(ctx, chatID, userID)
 }
 
-func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, "sora2")
+func (b *Bot) handleSoraGenerate(ctx context.Context, chatID, userID int64) {
+	hasCredits, creditsErr := b.service.HasCredits(ctx, userID, service.ModelSora)
 	if creditsErr != nil {
 		b.handleError(ctx, chatID, creditsErr, "Failed to check Sora credits")
 		return
@@ -238,20 +246,41 @@ func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		return
 	}
 
-	imageStatus := "нет"
-	if state.Sora.ImageURL != "" {
-		imageStatus = "да"
+	b.sendTyping(ctx, chatID)
+
+	systemPrompt := fmt.Sprintf(`Ты - AI ассистент для генерации описаний видео. 
+Пользователь хочет создать видео со следующими параметрами:
+- Промпт: %s
+- Длительность: %d секунд
+- Формат: %s
+- HD качество: %v
+- Изображение в основе: %s
+
+Создай детальное и креативное описание того, как будет выглядеть это видео. 
+Опиши сцены, движение камеры, атмосферу. Пиши на русском языке, 2-3 абзаца.`,
+		state.Sora.Prompt,
+		state.Sora.Duration,
+		state.Sora.Format,
+		state.Sora.HD,
+		func() string {
+			if state.Sora.ImageURL != "" {
+				return "да"
+			}
+			return "нет"
+		}())
+
+	aiMessages := []ai.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: "Создай описание видео"},
 	}
 
-	text := fmt.Sprintf(`Генерация видео запущена!
+	response, aiErr := b.aiClient.Chat(ctx, aiMessages)
+	if aiErr != nil {
+		b.handleError(ctx, chatID, aiErr, "Failed to generate video description")
+		return
+	}
 
-Промпт: %s
-Длительность: %d сек
-Формат: %s
-HD: %v
-Изображение: %s
-
-(Это заглушка - реальная генерация будет добавлена позже)`, state.Sora.Prompt, state.Sora.Duration, state.Sora.Format, state.Sora.HD, imageStatus)
+	text := fmt.Sprintf("✅ Генерация видео завершена!\n\n%s", response)
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
@@ -259,9 +288,9 @@ HD: %v
 		},
 	}
 
-	b.sendMessage(ctx, chatID, "✅ "+text, kb)
+	b.sendMessage(ctx, chatID, text, kb)
 
-	if usageErr := b.service.UseCredits(ctx, userID, "sora2"); usageErr != nil {
+	if usageErr := b.service.UseCredits(ctx, userID, service.ModelSora); usageErr != nil {
 		slog.Error("Failed to deduct Sora credits", "error", usageErr, "user_id", userID)
 	}
 

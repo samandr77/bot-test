@@ -19,17 +19,17 @@ func (b *Bot) handleSora2(ctx context.Context, tgBot *bot.Bot, update *tgmodels.
 		return
 	}
 
-	if err := b.stateService.SetMode(ctx, userID, models.ModeSora); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set Sora mode")
+	if modeErr := b.stateService.SetMode(ctx, userID, models.ModeSora); modeErr != nil {
+		b.handleError(ctx, chatID, modeErr, "Failed to set Sora mode")
 		return
 	}
 	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 }
 
 func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	state, err := b.stateService.Get(ctx, userID)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Failed to get user state for Sora main screen")
+	state, getErr := b.stateService.Get(ctx, userID)
+	if getErr != nil {
+		b.handleError(ctx, chatID, getErr, "Failed to get user state for Sora main screen")
 		return
 	}
 
@@ -83,7 +83,7 @@ func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Промпт", CallbackData: "sora:prompt"}, {Text: "Изображение", CallbackData: "sora:image"}},
+			{{Text: "✍️ Промпт", CallbackData: "sora:prompt"}, {Text: "🖼️ Изображение", CallbackData: "sora:image"}},
 			{
 				{Text: dur10, CallbackData: "sora:dur_10"},
 				{Text: dur15, CallbackData: "sora:dur_15"},
@@ -93,9 +93,9 @@ func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 				{Text: fmt16_9, CallbackData: "sora:fmt_16_9"},
 				{Text: fmt9_16, CallbackData: "sora:fmt_9_16"},
 			},
-			{{Text: fmt.Sprintf("HD: %s", hdIcon), CallbackData: "sora:hd"}},
-			{{Text: "Сгенерировать", CallbackData: "sora:generate"}},
-			{{Text: "Меню", CallbackData: "menu"}},
+			{{Text: fmt.Sprintf("📺 HD: %s", hdIcon), CallbackData: "sora:hd"}},
+			{{Text: "🚀 Сгенерировать", CallbackData: "sora:generate"}},
+			{{Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
@@ -103,8 +103,8 @@ func (b *Bot) showSoraMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 }
 
 func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraPrompt); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set waiting for Sora prompt")
+	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraPrompt); waitErr != nil {
+		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Sora prompt")
 		return
 	}
 
@@ -115,7 +115,7 @@ func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "⬅️ Назад", CallbackData: "sora:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
@@ -123,8 +123,8 @@ func (b *Bot) showSoraPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 }
 
 func (b *Bot) showSoraImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraImage); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set waiting for Sora image")
+	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingSoraImage); waitErr != nil {
+		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Sora image")
 		return
 	}
 
@@ -132,7 +132,7 @@ func (b *Bot) showSoraImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, u
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "⬅️ Назад", CallbackData: "sora:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
@@ -167,8 +167,8 @@ func (b *Bot) handleSoraCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 }
 
 func (b *Bot) handleSoraBack(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to clear waiting for Sora")
+	if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
+		b.handleError(ctx, chatID, clearErr, "Failed to clear waiting for Sora")
 		return
 	}
 	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
@@ -176,13 +176,13 @@ func (b *Bot) handleSoraBack(ctx context.Context, tgBot *bot.Bot, chatID, userID
 
 func (b *Bot) handleSoraDuration(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
 	durStr := strings.TrimPrefix(data, "sora:dur_")
-	dur, err := strconv.Atoi(durStr)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Invalid duration format")
+	dur, parseErr := strconv.Atoi(durStr)
+	if parseErr != nil {
+		b.handleError(ctx, chatID, parseErr, "Invalid duration format")
 		return
 	}
-	if err := b.stateService.SetSoraDuration(ctx, userID, dur); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set Sora duration")
+	if setErr := b.stateService.SetSoraDuration(ctx, userID, dur); setErr != nil {
+		b.handleError(ctx, chatID, setErr, "Failed to set Sora duration")
 		return
 	}
 	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
@@ -190,16 +190,16 @@ func (b *Bot) handleSoraDuration(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 func (b *Bot) handleSoraFormat(ctx context.Context, tgBot *bot.Bot, chatID, userID int64, data string) {
 	format := strings.ReplaceAll(strings.TrimPrefix(data, "sora:fmt_"), "_", ":")
-	if err := b.stateService.SetSoraFormat(ctx, userID, format); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set Sora format")
+	if setErr := b.stateService.SetSoraFormat(ctx, userID, format); setErr != nil {
+		b.handleError(ctx, chatID, setErr, "Failed to set Sora format")
 		return
 	}
 	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 }
 
 func (b *Bot) handleSoraHD(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if _, err := b.stateService.ToggleSoraHD(ctx, userID); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to toggle Sora HD")
+	if _, toggleErr := b.stateService.ToggleSoraHD(ctx, userID); toggleErr != nil {
+		b.handleError(ctx, chatID, toggleErr, "Failed to toggle Sora HD")
 		return
 	}
 	b.showSoraMainScreen(ctx, tgBot, chatID, userID)
@@ -216,9 +216,9 @@ func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		return
 	}
 
-	state, err := b.stateService.Get(ctx, userID)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Failed to get user state for Sora generation")
+	state, getErr := b.stateService.Get(ctx, userID)
+	if getErr != nil {
+		b.handleError(ctx, chatID, getErr, "Failed to get user state for Sora generation")
 		return
 	}
 
@@ -230,8 +230,8 @@ func (b *Bot) handleSoraGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 		kb := &tgmodels.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-				{{Text: "Добавить промпт", CallbackData: "sora:prompt"}},
-				{{Text: "Назад", CallbackData: "sora:back"}, {Text: "Меню", CallbackData: "menu"}},
+				{{Text: "➕ Добавить промпт", CallbackData: "sora:prompt"}},
+				{{Text: "⬅️ Назад", CallbackData: "sora:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 			},
 		}
 		b.sendMessage(ctx, chatID, text, kb)
@@ -255,17 +255,17 @@ HD: %v
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Sora 2", CallbackData: "sora:start"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "🎥 Sora 2", CallbackData: "sora:start"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
-	b.sendMessage(ctx, chatID, text, kb)
+	b.sendMessage(ctx, chatID, "✅ "+text, kb)
 
-	if err := b.service.UseCredits(ctx, userID, "sora2"); err != nil {
-		slog.Error("Failed to deduct Sora credits", "error", err, "user_id", userID)
+	if usageErr := b.service.UseCredits(ctx, userID, "sora2"); usageErr != nil {
+		slog.Error("Failed to deduct Sora credits", "error", usageErr, "user_id", userID)
 	}
 
-	if err := b.stateService.ResetSora(ctx, userID); err != nil {
-		slog.Error("Failed to reset Sora state", "error", err, "user_id", userID)
+	if resetErr := b.stateService.ResetSora(ctx, userID); resetErr != nil {
+		slog.Error("Failed to reset Sora state", "error", resetErr, "user_id", userID)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/joho/godotenv"
+	"github.com/samandr77/bot-test/internal/ai"
 	"github.com/samandr77/bot-test/internal/bot"
 	"github.com/samandr77/bot-test/internal/config"
 	"github.com/samandr77/bot-test/internal/pkg/logger"
@@ -36,6 +37,16 @@ func main() {
 		slog.Error("Failed to init repository", "error", err)
 		os.Exit(1)
 	}
+	sqlDB, sqlDBErr := db.DB.DB()
+	if sqlDBErr != nil {
+		slog.Error("Failed to get sql.DB from gorm", "error", sqlDBErr)
+		os.Exit(1)
+	}
+	defer func() {
+		if closeErr := sqlDB.Close(); closeErr != nil {
+			slog.Error("Failed to close database connection", "error", closeErr)
+		}
+	}()
 
 	stateRepo, err := repository.NewRedisStateRepository(cfg.RedisURL)
 	if err != nil {
@@ -49,8 +60,11 @@ func main() {
 	}()
 
 	stateService := service.NewStateService(stateRepo)
+	chatService := service.NewChatService(db)
 
-	b, err := bot.New(cfg.TelegramBotToken, db, cfg.PaymentProviderToken, stateService)
+	aiClient := ai.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+
+	b, err := bot.New(cfg, db, stateService, chatService, aiClient)
 	if err != nil {
 		slog.Error("Failed to init bot", "error", err)
 		os.Exit(1)

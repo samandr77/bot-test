@@ -8,6 +8,12 @@ import (
 	"github.com/samandr77/bot-test/internal/repository"
 )
 
+const (
+	ModelGPT        = "gpt"
+	ModelSora       = "sora2"
+	ModelNanoBanana = "nanobanana"
+)
+
 type Service interface {
 	GetBalance(ctx context.Context, userID int64) (string, error)
 	SaveUser(ctx context.Context, user *models.User) error
@@ -28,9 +34,9 @@ func New(r repository.Repository) Service {
 }
 
 func (s *service) GetBalance(ctx context.Context, userID int64) (string, error) {
-	balance, err := s.repo.GetBalance(ctx, userID)
-	if err != nil {
-		return "", err
+	balance, getErr := s.repo.GetBalance(ctx, userID)
+	if getErr != nil {
+		return "", fmt.Errorf("failed to get balance from repo: %w", getErr)
 	}
 
 	return fmt.Sprintf("Ваш баланс:\n- GPT: %d\n- Sora 2: %d\n- NanoBanana: %d",
@@ -38,41 +44,53 @@ func (s *service) GetBalance(ctx context.Context, userID int64) (string, error) 
 }
 
 func (s *service) SaveUser(ctx context.Context, user *models.User) error {
-	return s.repo.SaveUser(ctx, user)
+	saveErr := s.repo.SaveUser(ctx, user)
+	if saveErr != nil {
+		return fmt.Errorf("failed to save user in repo: %w", saveErr)
+	}
+	return nil
 }
 
 func (s *service) UpdateUser(ctx context.Context, user *models.User) error {
-	return s.repo.UpdateUser(ctx, user)
+	updateErr := s.repo.UpdateUser(ctx, user)
+	if updateErr != nil {
+		return fmt.Errorf("failed to update user in repo: %w", updateErr)
+	}
+	return nil
 }
 
 func (s *service) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
-	return s.repo.AddCredits(ctx, userID, modelType, amount)
+	addErr := s.repo.AddCredits(ctx, userID, modelType, amount)
+	if addErr != nil {
+		return fmt.Errorf("failed to add credits in repo: %w", addErr)
+	}
+	return nil
 }
 
 func (s *service) HasCredits(ctx context.Context, userID int64, modelType string) (bool, error) {
-	credits, err := s.repo.GetCredits(ctx, userID, modelType)
-	if err != nil {
-		return false, err
+	credits, getErr := s.repo.GetCredits(ctx, userID, modelType)
+	if getErr != nil {
+		return false, fmt.Errorf("failed to get credits from repo: %w", getErr)
 	}
 	return credits > 0, nil
 }
 
 func (s *service) UseCredits(ctx context.Context, userID int64, modelType string) error {
-	balance, err := s.repo.GetBalance(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to get balance: %w", err)
+	balance, getErr := s.repo.GetBalance(ctx, userID)
+	if getErr != nil {
+		return fmt.Errorf("failed to get balance: %w", getErr)
 	}
 
 	switch modelType {
-	case "gpt":
+	case ModelGPT:
 		if balance.GptCredits > 0 {
 			balance.GptCredits--
 		}
-	case "sora2":
+	case ModelSora:
 		if balance.SoraCredits > 0 {
 			balance.SoraCredits--
 		}
-	case "nanobanana", "nanobanano":
+	case ModelNanoBanana:
 		if balance.NanobananaCredits > 0 {
 			balance.NanobananaCredits--
 		}
@@ -80,8 +98,8 @@ func (s *service) UseCredits(ctx context.Context, userID int64, modelType string
 		return fmt.Errorf("unknown model type: %s", modelType)
 	}
 
-	if err := s.repo.Update(ctx, balance); err != nil {
-		return fmt.Errorf("failed to update balance: %w", err)
+	if updateErr := s.repo.Update(ctx, balance); updateErr != nil {
+		return fmt.Errorf("failed to update balance in repo: %w", updateErr)
 	}
 
 	return nil

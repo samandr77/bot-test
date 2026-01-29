@@ -39,8 +39,8 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 
 	traceID := logger.GetTraceID(ctx)
 
-	if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
-		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", err, "user_id", userID)
+	if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
+		slog.Warn("Failed to clear waiting state", "handler", "handleMenu", "traceID", traceID, "error", clearErr, "user_id", userID)
 	}
 
 	if update.CallbackQuery != nil {
@@ -50,9 +50,9 @@ func (b *Bot) handleMenu(ctx context.Context, tgBot *bot.Bot, update *tgmodels.U
 	text := "Выберите нужную модель или команду:"
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "gpt", CallbackData: "gpt:start"}, {Text: "sora2", CallbackData: "sora:start"}},
-			{{Text: "nanobanano", CallbackData: "nano:start"}},
-			{{Text: "balance", CallbackData: "balance:start"}},
+			{{Text: "🤖 GPT", CallbackData: "gpt:start"}, {Text: "🎥 Sora 2", CallbackData: "sora:start"}},
+			{{Text: "🍌 NanoBanana", CallbackData: "nano:start"}},
+			{{Text: "💰 Баланс", CallbackData: "balance:start"}},
 		},
 	}
 
@@ -84,11 +84,11 @@ func (b *Bot) handleCallback(ctx context.Context, tgBot *bot.Bot, update *tgmode
 	case strings.HasPrefix(data, "buy:"):
 		b.handleBuyCallback(ctx, tgBot, update)
 	default:
-		if _, err := tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		if _, answerErr := tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
 			Text:            "Эта функция будет доступна позже",
-		}); err != nil {
-			slog.Error("Failed to answer callback query with text", "error", err, "callback_id", update.CallbackQuery.ID)
+		}); answerErr != nil {
+			slog.Error("Failed to answer callback query with text", "error", answerErr, "callback_id", update.CallbackQuery.ID)
 		}
 	}
 }

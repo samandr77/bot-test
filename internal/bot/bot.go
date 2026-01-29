@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
+	"github.com/samandr77/bot-test/internal/ai"
+	"github.com/samandr77/bot-test/internal/config"
 	"github.com/samandr77/bot-test/internal/models"
 	"github.com/samandr77/bot-test/internal/pkg/logger"
 	"github.com/samandr77/bot-test/internal/repository"
@@ -19,17 +21,23 @@ type Bot struct {
 	repo                 *repository.Repo
 	service              service.Service
 	stateService         service.StateService
+	chatService          service.ChatService
 	paymentProviderToken string
+	aiClient             ai.AIClient
+	cfg                  *config.Config
 }
 
-func New(token string, repo *repository.Repo, paymentToken string, stateService service.StateService) (*Bot, error) {
+func New(cfg *config.Config, repo *repository.Repo, stateService service.StateService, chatService service.ChatService, aiClient ai.AIClient) (*Bot, error) {
 	svc := service.New(repo)
 
 	b := &Bot{
 		repo:                 repo,
 		service:              svc,
 		stateService:         stateService,
-		paymentProviderToken: paymentToken,
+		chatService:          chatService,
+		paymentProviderToken: cfg.PaymentProviderToken,
+		aiClient:             aiClient,
+		cfg:                  cfg,
 	}
 
 	opts := []bot.Option{
@@ -37,9 +45,9 @@ func New(token string, repo *repository.Repo, paymentToken string, stateService 
 		bot.WithMiddlewares(b.LoggingMiddleware),
 	}
 
-	tgBot, err := bot.New(token, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create bot: %w", err)
+	tgBot, botErr := bot.New(cfg.TelegramBotToken, opts...)
+	if botErr != nil {
+		return nil, fmt.Errorf("failed to create bot: %w", botErr)
 	}
 
 	b.tgBot = tgBot
@@ -77,21 +85,45 @@ func (b *Bot) handleError(ctx context.Context, chatID int64, err error, message 
 	b.sendMessage(ctx, chatID, "Извините, произошла техническая ошибка. Мы уже работаем над её исправлением.", nil)
 }
 
-func (b *Bot) sendMessage(ctx context.Context, chatID int64, text string, kb *tgmodels.InlineKeyboardMarkup) {
-	if _, err := b.tgBot.SendMessage(ctx, &bot.SendMessageParams{
+func (b *Bot) sendMessage(ctx context.Context, chatID int64, text string, kb *tgmodels.InlineKeyboardMarkup) *tgmodels.Message {
+	params := &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
 		ReplyMarkup: kb,
-	}); err != nil {
-		slog.Error("Failed to send message", "error", err, "chat_id", chatID)
+		ParseMode:   tgmodels.ParseModeHTML,
+	}
+
+	msg, sendErr := b.tgBot.SendMessage(ctx, params)
+	if sendErr != nil {
+		slog.Error("Failed to send message", "error", sendErr, "chat_id", chatID)
+		return nil
+	}
+	return msg
+}
+
+func (b *Bot) sendTyping(ctx context.Context, chatID int64) {
+	if _, actionErr := b.tgBot.SendChatAction(ctx, &bot.SendChatActionParams{
+		ChatID: chatID,
+		Action: tgmodels.ChatActionTyping,
+	}); actionErr != nil {
+		slog.Error("Failed to send chat action", "error", actionErr, "chat_id", chatID)
 	}
 }
 
+func (b *Bot) sendVariant(ctx context.Context, chatID int64, userID int64, key string, kb *tgmodels.InlineKeyboardMarkup) *tgmodels.Message {
+	variant, variantErr := b.stateService.GetNextVariant(ctx, userID, key)
+	if variantErr != nil {
+		slog.Warn("Failed to get next variant", "key", key, "userID", userID, "error", variantErr)
+	}
+
+	return b.sendMessage(ctx, chatID, variant, kb)
+}
+
 func (b *Bot) answerCallback(ctx context.Context, callbackQueryID string) {
-	if _, err := b.tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+	if _, answerErr := b.tgBot.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 		CallbackQueryID: callbackQueryID,
-	}); err != nil {
-		slog.Error("Failed to answer callback query", "error", err, "callback_id", callbackQueryID)
+	}); answerErr != nil {
+		slog.Error("Failed to answer callback query", "error", answerErr, "callback_id", callbackQueryID)
 	}
 }
 
@@ -99,12 +131,12 @@ func (b *Bot) sendNoCreditsMessage(ctx context.Context, chatID int64) {
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
 			{
-				{Text: "Купить", CallbackData: "buy:start"},
-				{Text: "Меню", CallbackData: "menu"},
+				{Text: "💳 Купить", CallbackData: "buy:start"},
+				{Text: "🏠 Меню", CallbackData: "menu"},
 			},
 		},
 	}
-	b.sendMessage(ctx, chatID, "У тебя закончились запросы", kb)
+	b.sendMessage(ctx, chatID, "❌ У тебя закончились запросы", kb)
 }
 
 func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
@@ -114,9 +146,9 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 
 	userID := update.Message.From.ID
 	chatID := update.Message.Chat.ID
-	state, err := b.stateService.Get(ctx, userID)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Failed to get user state")
+	state, stateErr := b.stateService.Get(ctx, userID)
+	if stateErr != nil {
+		b.handleError(ctx, chatID, stateErr, "Failed to get user state")
 		return
 	}
 
@@ -136,15 +168,15 @@ func (b *Bot) onMessage(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Up
 
 	switch state.WaitingFor {
 	case models.WaitingSoraPrompt:
-		if err := b.stateService.SetSoraPrompt(ctx, userID, update.Message.Text); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora prompt")
+		if promptErr := b.stateService.SetSoraPrompt(ctx, userID, update.Message.Text); promptErr != nil {
+			b.handleError(ctx, chatID, promptErr, "Failed to set Sora prompt")
 			return
 		}
 		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 		return
 	case models.WaitingNanoPrompt:
-		if err := b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Nano prompt")
+		if promptErr := b.stateService.SetNanoPrompt(ctx, userID, update.Message.Text); promptErr != nil {
+			b.handleError(ctx, chatID, promptErr, "Failed to set Nano prompt")
 			return
 		}
 		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
@@ -196,22 +228,22 @@ func (b *Bot) saveImageFromMessage(ctx context.Context, tgBot *bot.Bot, update *
 
 	switch state.WaitingFor {
 	case models.WaitingSoraImage:
-		if err := b.stateService.SetSoraImage(ctx, userID, fileID); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Sora image")
+		if imageErr := b.stateService.SetSoraImage(ctx, userID, fileID); imageErr != nil {
+			b.handleError(ctx, chatID, imageErr, "Failed to set Sora image")
 			return
 		}
 		b.sendMessage(ctx, chatID, "Изображение сохранено!", nil)
 		b.showSoraMainScreen(ctx, tgBot, chatID, userID)
 	case models.WaitingNanoImage:
-		if err := b.stateService.SetNanoImage(ctx, userID, fileID); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set Nano image")
+		if imageErr := b.stateService.SetNanoImage(ctx, userID, fileID); imageErr != nil {
+			b.handleError(ctx, chatID, imageErr, "Failed to set Nano image")
 			return
 		}
 
 		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
 
-		if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to set waiting for Nano prompt")
+		if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); waitErr != nil {
+			b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano prompt")
 		}
 	default:
 		b.sendMessage(ctx, chatID, "Используйте /menu для выбора модели.", nil)
@@ -230,11 +262,11 @@ func (b *Bot) onStart(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Upda
 		LastName:  update.Message.From.LastName,
 	}
 
-	if err := b.service.SaveUser(ctx, user); err != nil {
-		slog.Error("Failed to save user", "error", err)
+	if saveErr := b.service.SaveUser(ctx, user); saveErr != nil {
+		slog.Error("Failed to save user", "error", saveErr)
 	}
 
-	b.sendMessage(ctx, update.Message.Chat.ID, "Привет! Я ИИ бот. Я могу генерировать текст, видео (Sora 2) и фото (NanoBanana).", nil)
+	b.sendMessage(ctx, update.Message.Chat.ID, "👋 Привет! Я ИИ бот.\n\nЯ могу генерировать:\n🤖 Текст (GPT)\n🎥 Видео (Sora 2)\n🖼️ Фото (NanoBanana)", nil)
 
 	b.handleMenu(ctx, tgBot, update)
 }

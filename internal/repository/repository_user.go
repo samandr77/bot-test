@@ -25,30 +25,30 @@ type Repo struct {
 }
 
 func New(dsn string) (*Repo, error) {
-	if err := RunMigrations(dsn); err != nil {
-		return nil, err
+	if migrateErr := RunMigrations(dsn); migrateErr != nil {
+		return nil, fmt.Errorf("migration error: %w", migrateErr)
 	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	db, dbErr := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		PrepareStmt: false,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("ошибка подключения к базе данных: %w", err)
+	if dbErr != nil {
+		return nil, fmt.Errorf("database connection error: %w", dbErr)
 	}
 
-	slog.Info("Успешное подключение к базе данных")
+	slog.Info("Database connection established")
 
 	return &Repo{DB: db}, nil
 }
 
 func (r *Repo) GetBalance(ctx context.Context, userID int64) (*models.Balance, error) {
 	var balance models.Balance
-	err := r.DB.WithContext(ctx).Where("user_id = ?", userID).First(&balance).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+	firstErr := r.DB.WithContext(ctx).Where("user_id = ?", userID).First(&balance).Error
+	if firstErr != nil {
+		if firstErr == gorm.ErrRecordNotFound {
 			return &models.Balance{UserID: userID}, nil
 		}
-		return nil, fmt.Errorf("failed to get balance: %w", err)
+		return nil, fmt.Errorf("failed to get balance: %w", firstErr)
 	}
 	return &balance, nil
 }
@@ -56,19 +56,19 @@ func (r *Repo) GetBalance(ctx context.Context, userID int64) (*models.Balance, e
 func (r *Repo) SaveUser(ctx context.Context, user *models.User) error {
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existingUser models.User
-		err := tx.Where("id = ?", user.ID).First(&existingUser).Error
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				if errCreate := tx.Create(user).Error; errCreate != nil {
-					return fmt.Errorf("ошибка создания пользователя: %w", errCreate)
+		findErr := tx.Where("id = ?", user.ID).First(&existingUser).Error
+		if findErr != nil {
+			if findErr == gorm.ErrRecordNotFound {
+				if createErr := tx.Create(user).Error; createErr != nil {
+					return fmt.Errorf("failed to create user: %w", createErr)
 				}
 				balance := &models.Balance{UserID: user.ID}
-				if errBalance := tx.Create(balance).Error; errBalance != nil {
-					return fmt.Errorf("ошибка создания баланса: %w", errBalance)
+				if balanceErr := tx.Create(balance).Error; balanceErr != nil {
+					return fmt.Errorf("failed to create balance: %w", balanceErr)
 				}
 				return nil
 			}
-			return fmt.Errorf("ошибка поиска пользователя: %w", err)
+			return fmt.Errorf("failed to find user: %w", findErr)
 		}
 
 		hasChanges := false
@@ -86,8 +86,8 @@ func (r *Repo) SaveUser(ctx context.Context, user *models.User) error {
 		}
 
 		if hasChanges {
-			if err := tx.Save(&existingUser).Error; err != nil {
-				return fmt.Errorf("ошибка обновления пользователя: %w", err)
+			if saveErr := tx.Save(&existingUser).Error; saveErr != nil {
+				return fmt.Errorf("failed to update user: %w", saveErr)
 			}
 		}
 
@@ -96,15 +96,23 @@ func (r *Repo) SaveUser(ctx context.Context, user *models.User) error {
 }
 
 func (r *Repo) UpdateUser(ctx context.Context, user *models.User) error {
-	return r.DB.WithContext(ctx).Model(user).Updates(map[string]interface{}{
+	updateErr := r.DB.WithContext(ctx).Model(user).Updates(map[string]interface{}{
 		"username":   user.Username,
 		"first_name": user.FirstName,
 		"last_name":  user.LastName,
 	}).Error
+	if updateErr != nil {
+		return fmt.Errorf("failed to update user: %w", updateErr)
+	}
+	return nil
 }
 
 func (r *Repo) Update(ctx context.Context, balance *models.Balance) error {
-	return r.DB.WithContext(ctx).Save(balance).Error
+	saveErr := r.DB.WithContext(ctx).Save(balance).Error
+	if saveErr != nil {
+		return fmt.Errorf("failed to save balance: %w", saveErr)
+	}
+	return nil
 }
 
 func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, amount int) error {
@@ -112,9 +120,9 @@ func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, a
 
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var balance models.Balance
-		if err := tx.Where("user_id = ?", userID).FirstOrCreate(&balance, models.Balance{UserID: userID}).Error; err != nil {
-			slog.Error("Failed to get/create balance in transaction", "error", err, "userID", userID)
-			return fmt.Errorf("failed to get/create balance: %w", err)
+		if getErr := tx.Where("user_id = ?", userID).FirstOrCreate(&balance, models.Balance{UserID: userID}).Error; getErr != nil {
+			slog.Error("Failed to get/create balance in transaction", "error", getErr, "userID", userID)
+			return fmt.Errorf("failed to get/create balance: %w", getErr)
 		}
 
 		slog.Info("Balance before update", "userID", userID, "gpt", balance.GptCredits, "sora", balance.SoraCredits, "nano", balance.NanobananaCredits)
@@ -127,14 +135,14 @@ func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, a
 		case "nanobanana", "nanobanano":
 			balance.NanobananaCredits += amount
 		default:
-			return fmt.Errorf("неизвестный тип модели: %s", modelType)
+			return fmt.Errorf("unknown model type: %s", modelType)
 		}
 
 		slog.Info("Balance after update", "userID", userID, "gpt", balance.GptCredits, "sora", balance.SoraCredits, "nano", balance.NanobananaCredits)
 
 		if saveErr := tx.Save(&balance).Error; saveErr != nil {
 			slog.Error("Failed to save balance", "error", saveErr, "userID", userID)
-			return saveErr
+			return fmt.Errorf("failed to save balance: %w", saveErr)
 		}
 
 		slog.Info("Balance saved successfully", "userID", userID)
@@ -144,19 +152,19 @@ func (r *Repo) AddCredits(ctx context.Context, userID int64, modelType string, a
 
 func (r *Repo) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	var user models.User
-	if err := r.DB.WithContext(ctx).First(&user, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("user not found: %w", err)
+	if findErr := r.DB.WithContext(ctx).First(&user, id).Error; findErr != nil {
+		if findErr == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("user not found: %w", findErr)
 		}
-		return nil, fmt.Errorf("failed to get user by id: %w", err)
+		return nil, fmt.Errorf("failed to get user by id: %w", findErr)
 	}
 	return &user, nil
 }
 
 func (r *Repo) GetCredits(ctx context.Context, userID int64, modelType string) (int, error) {
-	balance, err := r.GetBalance(ctx, userID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get credits: %w", err)
+	balance, balanceErr := r.GetBalance(ctx, userID)
+	if balanceErr != nil {
+		return 0, fmt.Errorf("failed to get credits: %w", balanceErr)
 	}
 
 	switch modelType {

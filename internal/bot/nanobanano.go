@@ -13,25 +13,21 @@ import (
 func (b *Bot) handleNanoBanana(ctx context.Context, tgBot *bot.Bot, update *tgmodels.Update) {
 	chatID := b.getChatID(update)
 	userID := b.getUserID(update)
-	slog.Info("handleNanoBanana called", "chatID", chatID, "userID", userID)
 	if chatID == 0 || userID == 0 {
-		slog.Warn("handleNanoBanana: chatID or userID is 0")
 		return
 	}
 
-	if err := b.stateService.SetMode(ctx, userID, models.ModeNano); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set Nano mode")
+	if modeErr := b.stateService.SetMode(ctx, userID, models.ModeNano); modeErr != nil {
+		b.handleError(ctx, chatID, modeErr, "Failed to set Nano mode")
 		return
 	}
 	b.showNanoMainScreen(ctx, tgBot, chatID, userID)
 }
 
 func (b *Bot) showNanoMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	slog.Info("showNanoMainScreen called", "chatID", chatID, "userID", userID)
-
-	state, err := b.stateService.Get(ctx, userID)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Failed to get user state for Nano main screen")
+	state, getErr := b.stateService.Get(ctx, userID)
+	if getErr != nil {
+		b.handleError(ctx, chatID, getErr, "Failed to get user state for Nano main screen")
 		return
 	}
 
@@ -58,21 +54,18 @@ func (b *Bot) showNanoMainScreen(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Промпт", CallbackData: "nano:prompt"}, {Text: "Изображения", CallbackData: "nano:images"}},
-			{{Text: "Сгенерировать", CallbackData: "nano:generate"}},
-			{{Text: "Меню", CallbackData: "menu"}},
+			{{Text: "✍️ Промпт", CallbackData: "nano:prompt"}, {Text: "🖼️ Изображения", CallbackData: "nano:images"}},
+			{{Text: "🚀 Сгенерировать", CallbackData: "nano:generate"}},
+			{{Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
-	slog.Info("showNanoMainScreen sending text", "text", text, "promptText", promptText, "imageText", imageText)
-
 	b.sendMessage(ctx, chatID, text, kb)
-	slog.Info("showNanoMainScreen SendMessage result", "err", err)
 }
 
 func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set waiting for Nano prompt")
+	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoPrompt); waitErr != nil {
+		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano prompt")
 		return
 	}
 
@@ -82,7 +75,7 @@ func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "⬅️ Назад", CallbackData: "nano:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
@@ -90,8 +83,8 @@ func (b *Bot) showNanoPromptScreen(ctx context.Context, tgBot *bot.Bot, chatID, 
 }
 
 func (b *Bot) showNanoImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, userID int64) {
-	if err := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoImage); err != nil {
-		b.handleError(ctx, chatID, err, "Failed to set waiting for Nano image")
+	if waitErr := b.stateService.SetWaitingFor(ctx, userID, models.WaitingNanoImage); waitErr != nil {
+		b.handleError(ctx, chatID, waitErr, "Failed to set waiting for Nano image")
 		return
 	}
 
@@ -101,7 +94,7 @@ func (b *Bot) showNanoImageScreen(ctx context.Context, tgBot *bot.Bot, chatID, u
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "⬅️ Назад", CallbackData: "nano:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
 
@@ -113,8 +106,6 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	chatID := b.getChatID(update)
 	userID := b.getUserID(update)
 
-	slog.Info("Nano callback received", "data", data, "chatID", chatID, "userID", userID)
-
 	b.answerCallback(ctx, update.CallbackQuery.ID)
 
 	switch data {
@@ -125,8 +116,8 @@ func (b *Bot) handleNanoCallback(ctx context.Context, tgBot *bot.Bot, update *tg
 	case "nano:images":
 		b.showNanoImageScreen(ctx, tgBot, chatID, userID)
 	case "nano:back":
-		if err := b.stateService.ClearWaiting(ctx, userID); err != nil {
-			b.handleError(ctx, chatID, err, "Failed to clear waiting for Nano")
+		if clearErr := b.stateService.ClearWaiting(ctx, userID); clearErr != nil {
+			b.handleError(ctx, chatID, clearErr, "Failed to clear waiting for Nano")
 			return
 		}
 		b.showNanoMainScreen(ctx, tgBot, chatID, userID)
@@ -146,17 +137,17 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 		return
 	}
 
-	state, err := b.stateService.Get(ctx, userID)
-	if err != nil {
-		b.handleError(ctx, chatID, err, "Failed to get user state for Nano generation")
+	state, getErr := b.stateService.Get(ctx, userID)
+	if getErr != nil {
+		b.handleError(ctx, chatID, getErr, "Failed to get user state for Nano generation")
 		return
 	}
 
 	if state.Nano.Prompt == "" && state.Nano.ImageURL == "" {
 		kb := &tgmodels.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-				{{Text: "Добавить промпт", CallbackData: "nano:prompt"}, {Text: "Изображение", CallbackData: "nano:images"}},
-				{{Text: "Назад", CallbackData: "nano:back"}, {Text: "Меню", CallbackData: "menu"}},
+				{{Text: "✍️ Добавить промпт", CallbackData: "nano:prompt"}, {Text: "🖼️ Изображение", CallbackData: "nano:images"}},
+				{{Text: "⬅️ Назад", CallbackData: "nano:back"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 			},
 		}
 		b.sendMessage(ctx, chatID, "Сначала укажите промпт или загрузите изображение.", kb)
@@ -184,17 +175,16 @@ func (b *Bot) handleNanoGenerate(ctx context.Context, tgBot *bot.Bot, chatID, us
 
 	kb := &tgmodels.InlineKeyboardMarkup{
 		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
-			{{Text: "NanoBanana", CallbackData: "nano:start"}, {Text: "Меню", CallbackData: "menu"}},
+			{{Text: "🍌 NanoBanana", CallbackData: "nano:start"}, {Text: "🏠 Меню", CallbackData: "menu"}},
 		},
 	}
+	b.sendMessage(ctx, chatID, "✅ "+text, kb)
 
-	b.sendMessage(ctx, chatID, text, kb)
-
-	if err := b.service.UseCredits(ctx, userID, "nanobanano"); err != nil {
-		slog.Error("Failed to deduct NanoBanana credits", "error", err, "user_id", userID)
+	if usageErr := b.service.UseCredits(ctx, userID, "nanobanano"); usageErr != nil {
+		slog.Error("Failed to deduct NanoBanana credits", "error", usageErr, "user_id", userID)
 	}
 
-	if err := b.stateService.ResetNano(ctx, userID); err != nil {
-		slog.Error("Failed to reset Nano state", "error", err, "user_id", userID)
+	if resetErr := b.stateService.ResetNano(ctx, userID); resetErr != nil {
+		slog.Error("Failed to reset Nano state", "error", resetErr, "user_id", userID)
 	}
 }

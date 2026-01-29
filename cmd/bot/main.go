@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/samandr77/bot-test/internal/ai"
@@ -15,8 +17,10 @@ import (
 	"github.com/samandr77/bot-test/internal/service"
 )
 
+const shutdownTimeout = 5 * time.Second
+
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	loadEnvErr := godotenv.Load()
@@ -43,8 +47,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
+		slog.Info("Closing database connection...")
 		if closeErr := sqlDB.Close(); closeErr != nil {
 			slog.Error("Failed to close database connection", "error", closeErr)
+		} else {
+			slog.Info("Database connection closed")
 		}
 	}()
 
@@ -54,8 +61,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
+		slog.Info("Closing Redis connection...")
 		if closeErr := stateRepo.Close(); closeErr != nil {
 			slog.Error("Failed to close state repository", "error", closeErr)
+		} else {
+			slog.Info("Redis connection closed")
 		}
 	}()
 
@@ -71,5 +81,22 @@ func main() {
 	}
 
 	slog.Info("Starting bot...")
-	b.Start(ctx)
+
+	go b.Start(ctx)
+
+	waitForShutdown(cancel)
+
+	slog.Info("Bot stopped gracefully")
+}
+
+func waitForShutdown(cancel context.CancelFunc) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+
+	sig := <-sigChan
+	slog.Info("Received shutdown signal", "signal", sig.String())
+
+	cancel()
+
+	time.Sleep(shutdownTimeout)
 }

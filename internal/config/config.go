@@ -13,6 +13,7 @@ type Config struct {
 	LogLevel             string
 	OpenAIAPIKey         string
 	OpenAIModel          string
+	AIBaseURL            string
 }
 
 func Load() (*Config, error) {
@@ -23,7 +24,8 @@ func Load() (*Config, error) {
 		PaymentProviderToken: os.Getenv("PAYMENT_PROVIDER_TOKEN"),
 		LogLevel:             getEnv("LOG_LEVEL", "info"),
 		OpenAIAPIKey:         os.Getenv("OPENAI_API_KEY"),
-		OpenAIModel:          getEnv("OPENAI_MODEL", "gpt-4"),
+		OpenAIModel:          getEnv("OPENAI_MODEL", "gpt-4o"),
+		AIBaseURL:            os.Getenv("AI_BASE_URL"),
 	}
 
 	if cfg.TelegramBotToken == "" {

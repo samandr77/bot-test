@@ -15,9 +15,14 @@ type OpenAIClient struct {
 	model  string
 }
 
-func NewOpenAIClient(apiKey, model string) *OpenAIClient {
+func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
+	config := openai.DefaultConfig(apiKey)
+	if baseURL != "" {
+		config.BaseURL = baseURL
+	}
+
 	return &OpenAIClient{
-		client: openai.NewClient(apiKey),
+		client: openai.NewClientWithConfig(config),
 		model:  model,
 	}
 }

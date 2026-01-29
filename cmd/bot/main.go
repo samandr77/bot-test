@@ -62,7 +62,7 @@ func main() {
 	stateService := service.NewStateService(stateRepo)
 	chatService := service.NewChatService(db)
 
-	aiClient := ai.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+	aiClient := ai.NewOpenAIClient(cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.AIBaseURL)
 
 	b, err := bot.New(cfg, db, stateService, chatService, aiClient)
 	if err != nil {
